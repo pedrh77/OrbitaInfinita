@@ -11,6 +11,7 @@
     result: document.querySelector('#result-copy'), combo: document.querySelector('#combo'),
     toast: document.querySelector('#toast'), ad: document.querySelector('#ad-banner'),
     continueButton: document.querySelector('#continue-button'), skins: document.querySelector('#skins'),
+    trails: document.querySelector('#trails'), items: document.querySelector('#items'),
     sector: document.querySelector('#sector')
   };
 
@@ -23,9 +24,20 @@
     { id: 'nebula', name: 'Nebulosa', color: '#ff6bce', cost: 280 },
     { id: 'ion', name: 'Íon', color: '#6ee7ff', cost: 520 },
     { id: 'void', name: 'Vazio', color: '#ad8cff', cost: 900 },
-    { id: 'nova', name: 'Supernova', color: '#ff724c', cost: 1500 }
+    { id: 'nova', name: 'Supernova', color: '#ff724c', cost: 1500 },
+    { id: 'aurora', name: 'Aurora', color: '#7dffb2', cost: 2200 },
+    { id: 'quantum', name: 'Quântica', color: '#65a4ff', cost: 3600 },
+    { id: 'eclipse', name: 'Eclipse', color: '#e3a7ff', cost: 6000 }
   ];
-  const defaults = { best: 0, coins: 0, selected: 'cometa', owned: ['cometa'], sound: true, runs: 0, noAds: false };
+  const trails = [
+    { id: 'classic', name: 'Clássico', color: '#f7f8ff', cost: 0 },
+    { id: 'plasma', name: 'Plasma', color: '#6ee7ff', cost: 350 },
+    { id: 'solar', name: 'Solar', color: '#ffcf5c', cost: 700 },
+    { id: 'nebula', name: 'Nebulosa', color: '#ff6bce', cost: 1100 },
+    { id: 'void', name: 'Vácuo', color: '#9b63ff', cost: 1800 },
+    { id: 'aurora', name: 'Aurora', color: '#70f0aa', cost: 2600 }
+  ];
+  const defaults = { best: 0, coins: 0, selected: 'cometa', owned: ['cometa'], selectedTrail: 'classic', ownedTrails: ['classic'], shields: 0, boosters: 0, sound: true, runs: 0, noAds: false };
   let save = loadSave();
   let W = 0, H = 0, dpr = 1, last = 0, state = 'menu';
   let stars = [], nebulae = [], comets = [], planets = [], particles = [], trail = [], asteroids = [], collectibles = [];
@@ -114,14 +126,14 @@
     const level = score + 1;
     const gapY = Math.min(H * .37, 205 + level * 2.4);
     const margin = 58;
-    const choiceCount = level >= 6 ? 3 : 2;
+    const choiceCount = level >= 5 ? 4 : 3;
     targets = [];
     for (let i = 0; i < choiceCount; i++) {
       let x, y;
       for (let attempt = 0; attempt < 14; attempt++) {
         x = margin + random() * (W - margin * 2);
-        y = current.y - gapY * (.72 + random() * .58);
-        if (targets.every(other => Math.hypot(x - other.x, y - other.y) > 112)) break;
+        y = current.y - gapY * (.58 + random() * 1.02);
+        if (targets.every(other => Math.hypot(x - other.x, y - other.y) > 96)) break;
       }
       const r = Math.max(20, 32 - level * .22 + random() * 9);
       const next = planet(x, y, r, palette[(level + i * 2) % palette.length], level * 37 + i * 11);
@@ -183,7 +195,9 @@
     holding = false;
     const tangent = ship.angle + Math.PI / 2 * ship.dir;
     const outward = ship.angle;
-    const speed = 255 + charge * 290;
+    const boost = save.boosters > 0 ? 1.15 : 1;
+    const speed = (255 + charge * 290) * boost;
+    if (save.boosters > 0) { save.boosters -= 1; persist(); toast('IMPULSO +15% ATIVADO'); }
     ship.vx = Math.cos(tangent) * speed + Math.cos(outward) * 68;
     ship.vy = Math.sin(tangent) * speed + Math.sin(outward) * 68;
     ship.mode = 'flight'; trail = [];
@@ -217,10 +231,11 @@
     } else if (ship.mode === 'flight') {
       let ax = 0, ay = 0;
       for (const p of planets) {
-        if (p.hazard || p.target) {
+        if (p !== current || p.hazard) {
           const dx = p.x - ship.x, dy = p.y - ship.y;
           const d2 = Math.max(500, dx * dx + dy * dy);
-          const g = (p.hazard ? p.gravity : 165000) / d2;
+          const planetGravity = 125000 * (.7 + p.r / 48);
+          const g = (p.hazard ? p.gravity : planetGravity) / d2;
           const d = Math.sqrt(d2);
           ax += dx / d * g; ay += dy / d * g;
         }
@@ -283,6 +298,10 @@
 
   function lose() {
     if (state !== 'playing') return;
+    if (save.shields > 0) {
+      save.shields -= 1; persist(); holding = false; ship.mode = 'orbit'; ship.vx = ship.vy = 0; ship.angle = -Math.PI / 2; placeOrbitShip();
+      burst(current.x, current.y, '#6ee7ff', 26, 150); ping(820, .12, 'sine'); toast('ESCUDO DE EMERGÊNCIA ATIVADO'); return;
+    }
     state = 'over'; holding = false; save.runs += 1; persist();
     burst(ship.x, ship.y, skinColor(), 30, 210);
     ping(110, .22, 'sawtooth');
@@ -388,6 +407,11 @@
       ctx.globalAlpha = .55; ctx.strokeStyle = tint(p.color, 28); ctx.lineWidth = Math.max(2, p.r * .1);
       ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * 1.55, p.r * .36, -.32, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
     }
+    if (!p.hazard) {
+      ctx.globalAlpha = .12; ctx.strokeStyle = p.color; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * 2.25, p.r * .68, -.18, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = .06; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * 2.8, p.r * .92, -.18, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
+    }
     ctx.shadowColor = p.color; ctx.shadowBlur = glow;
     const g = ctx.createRadialGradient(p.x - p.r * .34, p.y - p.r * .38, p.r * .05, p.x, p.y, p.r);
     if (p.hazardType === 'pulsar') { g.addColorStop(0, '#ffffff'); g.addColorStop(.22, '#9cf4ff'); g.addColorStop(.62, '#256fa8'); g.addColorStop(1, '#07152d'); }
@@ -410,7 +434,6 @@
         ctx.globalAlpha = .65 - ring * .16; ctx.strokeStyle = ring === 1 ? '#6ee7ff' : '#c081ff'; ctx.lineWidth = 2 - ring * .35;
         ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * (1.65 + ring * .38), p.r * (.36 + ring * .1), p.pulse * .22 - .35, 0, TAU); ctx.stroke();
       }
-      ctx.globalAlpha = .7; ctx.fillStyle = '#d6b2ff'; ctx.font = '800 9px system-ui'; ctx.textAlign = 'center';
     }
     if (p.target) {
       ctx.globalAlpha = .55; ctx.strokeStyle = p.color; ctx.lineWidth = 1.5;
@@ -454,7 +477,7 @@
       ctx.save();
       for (let i = 0; i < trail.length; i++) {
         const t = trail[i]; ctx.globalAlpha = Math.max(0, t.life) * (i / trail.length) * .55;
-        ctx.fillStyle = skinColor(); ctx.beginPath(); ctx.arc(t.x, t.y, 1 + i / trail.length * 3, 0, TAU); ctx.fill();
+        ctx.fillStyle = trailColor(i); ctx.beginPath(); ctx.arc(t.x, t.y, 1 + i / trail.length * 3, 0, TAU); ctx.fill();
       }
       ctx.restore();
     }
@@ -469,13 +492,14 @@
   function drawPrediction() {
     const tangent = ship.angle + Math.PI / 2 * ship.dir, outward = ship.angle;
     const previewCharge = holding ? charge : .54;
-    const speed = 255 + previewCharge * 290;
+    const speed = (255 + previewCharge * 290) * (save.boosters > 0 ? 1.15 : 1);
     let x = ship.x, y = ship.y, vx = Math.cos(tangent) * speed + Math.cos(outward) * 68, vy = Math.sin(tangent) * speed + Math.sin(outward) * 68;
     const points = []; let outcome = 'open';
     for (let i = 0; i < 46; i++) {
       const step = .034; let ax = 0, ay = 0;
-      for (const p of planets) if (p.hazard || p.target) {
-        const dx = p.x - x, dy = p.y - y, d2 = Math.max(500, dx * dx + dy * dy), d = Math.sqrt(d2), g = (p.hazard ? p.gravity : 165000) / d2;
+      for (const p of planets) if (p !== current || p.hazard) {
+        const dx = p.x - x, dy = p.y - y, d2 = Math.max(500, dx * dx + dy * dy), d = Math.sqrt(d2);
+        const planetGravity = 125000 * (.7 + p.r / 48), g = (p.hazard ? p.gravity : planetGravity) / d2;
         ax += dx / d * g; ay += dy / d * g;
       }
       vx += ax * step; vy += ay * step; x += vx * step; y += vy * step; points.push({ x, y });
@@ -522,6 +546,10 @@
     clearTimeout(toast.timer); toast.timer = setTimeout(() => ui.toast.classList.remove('show'), 1800);
   }
   function skinColor() { return skins.find(s => s.id === save.selected)?.color || '#fff'; }
+  function trailColor(index = 0) {
+    if (save.selectedTrail === 'aurora') return ['#70f0aa', '#6ee7ff', '#d9adff'][index % 3];
+    return trails.find(t => t.id === save.selectedTrail)?.color || skinColor();
+  }
   function tint(hex, amount) {
     const n = parseInt(hex.slice(1), 16), r = Math.max(0, Math.min(255, (n >> 16) + amount)), g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amount)), b = Math.max(0, Math.min(255, (n & 255) + amount));
     return `rgb(${r},${g},${b})`;
@@ -554,7 +582,41 @@
     });
   }
 
-  function openShop() { renderSkins(); ui.shop.classList.add('open'); ui.shopCoins.textContent = save.coins; }
+  function renderTrails() {
+    ui.trails.innerHTML = '';
+    trails.forEach(t => {
+      const owned = save.ownedTrails.includes(t.id), selected = save.selectedTrail === t.id;
+      const button = document.createElement('button'); button.className = `trail-card ${selected ? 'selected' : ''}`;
+      button.innerHTML = `<span class="trail-line" style="--trail:${t.color}"></span><b>${t.name}</b><small>${selected ? 'EM USO' : owned ? 'USAR' : `✦ ${t.cost}`}</small>`;
+      button.addEventListener('click', () => {
+        if (owned) save.selectedTrail = t.id;
+        else if (save.coins >= t.cost) { save.coins -= t.cost; save.ownedTrails.push(t.id); save.selectedTrail = t.id; }
+        else return toast(`Faltam ${t.cost - save.coins} de poeira estelar.`);
+        persist(); renderTrails();
+      });
+      ui.trails.appendChild(button);
+    });
+  }
+
+  function renderItems() {
+    ui.items.innerHTML = '';
+    [
+      { id: 'shield', name: 'Escudo de emergência', copy: `Salva uma viagem · Você tem ${save.shields}`, cost: 250 },
+      { id: 'booster', name: 'Impulso quântico', copy: `+15% no próximo salto · Você tem ${save.boosters}`, cost: 180 }
+    ].forEach(item => {
+      const button = document.createElement('button'); button.className = 'item-card';
+      button.innerHTML = `<span>✦ ${item.cost}</span><b>${item.name}</b><small>${item.copy}</small>`;
+      button.addEventListener('click', () => {
+        if (save.coins < item.cost) return toast(`Faltam ${item.cost - save.coins} de poeira estelar.`);
+        save.coins -= item.cost; if (item.id === 'shield') save.shields += 1; else save.boosters += 1;
+        persist(); renderItems(); toast(`${item.name} comprado.`);
+      });
+      ui.items.appendChild(button);
+    });
+  }
+
+  function renderShop() { renderSkins(); renderTrails(); renderItems(); }
+  function openShop() { renderShop(); ui.shop.classList.add('open'); ui.shopCoins.textContent = save.coins; }
   function closeShop() { ui.shop.classList.remove('open'); }
 
   document.querySelector('#play-button').addEventListener('click', begin);
@@ -573,7 +635,7 @@
       if (product === 'dust_5000') save.coins += 5000;
       if (product === 'nova_ship' && !save.owned.includes('nova')) { save.owned.push('nova'); save.selected = 'nova'; }
       if (product === 'remove_ads') { save.noAds = true; ui.ad.classList.remove('visible'); }
-      persist(); renderSkins();
+      persist(); renderShop();
     } else toast('Compra simulada — pronta para conectar à loja.');
   }));
 
