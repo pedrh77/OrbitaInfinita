@@ -11,8 +11,7 @@
     result: document.querySelector('#result-copy'), combo: document.querySelector('#combo'),
     toast: document.querySelector('#toast'), ad: document.querySelector('#ad-banner'),
     continueButton: document.querySelector('#continue-button'), skins: document.querySelector('#skins'),
-    aimCoach: document.querySelector('#aim-coach'), aimStatus: document.querySelector('#aim-status'),
-    aimHint: document.querySelector('#aim-hint'), sector: document.querySelector('#sector')
+    sector: document.querySelector('#sector')
   };
 
   const TAU = Math.PI * 2;
@@ -30,8 +29,8 @@
   let save = loadSave();
   let W = 0, H = 0, dpr = 1, last = 0, state = 'menu';
   let stars = [], nebulae = [], comets = [], planets = [], particles = [], trail = [], asteroids = [], collectibles = [];
-  let ship, current, target, score = 0, streak = 0, cameraY = 0, cameraTargetY = 0;
-  let holding = false, charge = 0, chargeDir = 1, continued = false, shake = 0;
+  let ship, current, targets = [], score = 0, streak = 0, cameraY = 0, cameraTargetY = 0;
+  let holding = false, charge = 0, chargeDir = 1, continued = false;
   let runSeed = 0, random = Math.random;
   let audioCtx = null;
 
@@ -100,54 +99,71 @@
     current = planet(W * .5, H * .72, 39, '#7c5cff', 10);
     current.visited = true;
     planets = [current];
-    spawnTarget();
+    spawnTargets();
     ship = { x: 0, y: 0, vx: 0, vy: 0, angle: -Math.PI * .22, orbitRadius: current.r + 19, mode: 'orbit', orbitSpeed: 1.48, dir: 1 };
     placeOrbitShip();
     state = 'playing';
     ui.start.classList.remove('active'); ui.over.classList.remove('active'); ui.shop.classList.remove('open');
     ui.ad.classList.toggle('visible', !save.noAds);
-    ui.aimCoach.classList.add('visible');
     ui.score.textContent = '0';
-    ui.sector.textContent = 'SETOR 01 · PROCEDURAL';
+    ui.sector.textContent = 'SETOR 01';
     ping(380, .06, 'sine');
   }
 
-  function spawnTarget() {
+  function spawnTargets() {
     const level = score + 1;
     const gapY = Math.min(H * .37, 205 + level * 2.4);
     const margin = 58;
-    let x = W * (.16 + random() * .68);
-    if (Math.abs(x - current.x) < W * .17) x = x < W / 2 ? margin : W - margin;
-    const r = Math.max(21, 35 - level * .28 + random() * 10);
-    target = planet(Math.max(margin, Math.min(W - margin, x)), current.y - gapY, r, palette[level % palette.length], level * 37);
-    target.target = true;
-    planets.push(target);
+    const choiceCount = level >= 6 ? 3 : 2;
+    targets = [];
+    for (let i = 0; i < choiceCount; i++) {
+      let x, y;
+      for (let attempt = 0; attempt < 14; attempt++) {
+        x = margin + random() * (W - margin * 2);
+        y = current.y - gapY * (.72 + random() * .58);
+        if (targets.every(other => Math.hypot(x - other.x, y - other.y) > 112)) break;
+      }
+      const r = Math.max(20, 32 - level * .22 + random() * 9);
+      const next = planet(x, y, r, palette[(level + i * 2) % palette.length], level * 37 + i * 11);
+      next.target = true; planets.push(next); targets.push(next);
+    }
+    const collectibleTarget = targets[Math.floor(random() * targets.length)];
     const collectibleT = .38 + random() * .24;
-    const routeX = current.x + (target.x - current.x) * collectibleT;
-    const routeY = current.y + (target.y - current.y) * collectibleT;
+    const routeX = current.x + (collectibleTarget.x - current.x) * collectibleT;
+    const routeY = current.y + (collectibleTarget.y - current.y) * collectibleT;
     collectibles.push({ x: routeX + (random() - .5) * 54, y: routeY, r: 7, pulse: random() * TAU, collected: false });
-    const blackHoleCount = level < 3 ? 0 : Math.min(3, 1 + Math.floor((level - 3) / 6));
+    const blackHoleCount = level < 3 ? 0 : Math.min(4, 2 + Math.floor((level - 3) / 5));
     for (let i = 0; i < blackHoleCount; i++) {
       if (level > 3 && random() < .22) continue;
       let ox, oy;
       for (let attempt = 0; attempt < 8; attempt++) {
         ox = W * (.13 + random() * .74);
         oy = current.y - gapY * (.28 + random() * .48);
-        if (Math.hypot(ox - current.x, oy - current.y) > 82 && Math.hypot(ox - target.x, oy - target.y) > 76) break;
+        if (Math.hypot(ox - current.x, oy - current.y) > 82 && targets.every(t => Math.hypot(ox - t.x, oy - t.y) > 76)) break;
       }
-      const hole = { ...planet(ox, oy, 14 + random() * 7, '#9b63ff', 100 + level * 7 + i), hazard: true, gravity: 480000 + level * 9000 };
+      const hole = { ...planet(ox, oy, 13 + random() * 7, '#9b63ff', 100 + level * 7 + i), hazard: true, hazardType: 'blackHole', gravity: 470000 + level * 9000 };
       planets.push(hole);
+    }
+    const pulsarCount = level < 4 ? 0 : Math.min(2, 1 + Math.floor((level - 4) / 7));
+    for (let i = 0; i < pulsarCount; i++) {
+      let px, py;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        px = margin + random() * (W - margin * 2); py = current.y - gapY * (.3 + random() * .62);
+        if (Math.hypot(px - current.x, py - current.y) > 90 && targets.every(t => Math.hypot(px - t.x, py - t.y) > 82)) break;
+      }
+      planets.push({ ...planet(px, py, 11 + random() * 5, '#6ee7ff', 600 + level * 9 + i), hazard: true, hazardType: 'pulsar', gravity: -(300000 + level * 7000) });
     }
     const asteroidCount = level < 4 ? 0 : Math.min(5, 1 + Math.floor((level - 4) / 4));
     for (let i = 0; i < asteroidCount; i++) {
       const t = .2 + random() * .62;
-      const bx = current.x + (target.x - current.x) * t;
-      const by = current.y + (target.y - current.y) * t;
+      const routeTarget = targets[i % targets.length];
+      const bx = current.x + (routeTarget.x - current.x) * t;
+      const by = current.y + (routeTarget.y - current.y) * t;
       const asteroid = { x: bx + (random() - .5) * W * .38, y: by + (random() - .5) * 44, r: 7 + random() * 6, rotation: random() * TAU, spin: (random() - .5) * 1.4, seed: random() * 20 };
-      if (Math.hypot(asteroid.x - current.x, asteroid.y - current.y) > 70 && Math.hypot(asteroid.x - target.x, asteroid.y - target.y) > 65) asteroids.push(asteroid);
+      if (Math.hypot(asteroid.x - current.x, asteroid.y - current.y) > 70 && targets.every(target => Math.hypot(asteroid.x - target.x, asteroid.y - target.y) > 65)) asteroids.push(asteroid);
     }
     if (level === 3) toast('ANOMALIA: buracos negros alteram a rota.');
-    if (level === 4) toast('CUIDADO: campo de asteroides à frente.');
+    if (level === 4) toast('CUIDADO: pulsares e asteroides à frente.');
   }
 
   function placeOrbitShip() {
@@ -183,7 +199,9 @@
     }
     if (state === 'over') { updateParticles(dt); return; }
     if (state !== 'playing') return;
-    cameraY += (cameraTargetY - cameraY) * Math.min(1, dt * 3.5);
+    const cameraDelta = cameraTargetY - cameraY;
+    cameraY += cameraDelta * Math.min(1, dt * 3.5);
+    if (Math.abs(cameraDelta) < .35) cameraY = cameraTargetY;
     planets.forEach(p => p.pulse += dt);
     asteroids.forEach(a => a.rotation += a.spin * dt);
     collectibles.forEach(c => c.pulse += dt * 3);
@@ -199,7 +217,7 @@
     } else if (ship.mode === 'flight') {
       let ax = 0, ay = 0;
       for (const p of planets) {
-        if (p.hazard || p === target) {
+        if (p.hazard || p.target) {
           const dx = p.x - ship.x, dy = p.y - ship.y;
           const d2 = Math.max(500, dx * dx + dy * dy);
           const g = (p.hazard ? p.gravity : 165000) / d2;
@@ -216,7 +234,6 @@
       const sy = ship.y - cameraY;
       if (sy > H + 90 || sy < -160 || ship.x < -120 || ship.x > W + 120) lose();
     }
-    if (shake > 0) shake = Math.max(0, shake - dt * 2.5);
   }
 
   function checkCollisions() {
@@ -225,7 +242,7 @@
       const dx = ship.x - p.x, dy = ship.y - p.y;
       const d = Math.hypot(dx, dy);
       if (d < p.r + 8) {
-        if (p === target) land(p, d);
+        if (p.target) land(p, d);
         else lose();
         return;
       }
@@ -247,7 +264,7 @@
     const reward = 3 + Math.min(12, streak * 2);
     save.coins += reward; save.best = Math.max(save.best, score); persist();
     ui.score.textContent = score;
-    ui.sector.textContent = `SETOR ${String(score + 1).padStart(2, '0')} · PROCEDURAL`;
+    ui.sector.textContent = `SETOR ${String(score + 1).padStart(2, '0')}`;
     p.target = false; p.visited = true; current = p;
     ship.mode = 'orbit'; ship.orbitRadius = current.r + 19;
     ship.angle = Math.atan2(ship.y - p.y, ship.x - p.x);
@@ -256,18 +273,18 @@
     charge = .18; chargeDir = 1;
     cameraTargetY = current.y - H * .66;
     burst(p.x, p.y, p.color, centerHit ? 24 : 14, 155);
-    shake = .4; ping(700 + Math.min(score, 12) * 28, .1, 'sine');
+    ping(700 + Math.min(score, 12) * 28, .1, 'sine');
     if (centerHit && streak >= 2) popCombo(streak);
-    planets = planets.filter(q => q === current || q === target || (q.y - cameraTargetY > -180 && q.y - cameraTargetY < H + 180));
+    planets = planets.filter(q => q === current || (!q.target && q.y - cameraTargetY > -180 && q.y - cameraTargetY < H + 180));
     asteroids = asteroids.filter(a => a.y - cameraTargetY > -180 && a.y - cameraTargetY < H + 180);
     collectibles = collectibles.filter(c => !c.collected && c.y - cameraTargetY > -180 && c.y - cameraTargetY < H + 180);
-    spawnTarget();
+    spawnTargets();
   }
 
   function lose() {
     if (state !== 'playing') return;
-    state = 'over'; holding = false; ui.aimCoach.classList.remove('visible'); save.runs += 1; persist();
-    burst(ship.x, ship.y, skinColor(), 30, 210); shake = 1;
+    state = 'over'; holding = false; save.runs += 1; persist();
+    burst(ship.x, ship.y, skinColor(), 30, 210);
     ping(110, .22, 'sawtooth');
     setTimeout(() => {
       ui.final.textContent = score;
@@ -283,7 +300,7 @@
     const ok = await window.OrbitaAds.showRewarded();
     ui.continueButton.disabled = false;
     if (!ok) return toast('O anúncio não ficou disponível.');
-    continued = true; ui.over.classList.remove('active'); state = 'playing'; ui.aimCoach.classList.add('visible');
+    continued = true; ui.over.classList.remove('active'); state = 'playing';
     ship.mode = 'orbit'; ship.angle = -Math.PI / 2; ship.vx = ship.vy = 0; placeOrbitShip();
     toast('Sinal recuperado!'); ping(620, .12, 'sine');
   }
@@ -319,9 +336,7 @@
     drawStars(time);
     drawComets();
     ctx.save();
-    if (shake) ctx.translate((Math.random() - .5) * shake * 10, (Math.random() - .5) * shake * 10);
     ctx.translate(0, -cameraY);
-    if (state === 'playing') drawRoute();
     planets.forEach(drawPlanet);
     asteroids.forEach(drawAsteroid);
     collectibles.forEach(drawCollectible);
@@ -366,12 +381,6 @@
     ctx.restore();
   }
 
-  function drawRoute() {
-    if (!current || !target) return;
-    ctx.save(); ctx.setLineDash([3, 10]); ctx.lineWidth = 1; ctx.strokeStyle = '#9ea7d026';
-    ctx.beginPath(); ctx.moveTo(current.x, current.y); ctx.lineTo(target.x, target.y); ctx.stroke(); ctx.restore();
-  }
-
   function drawPlanet(p) {
     const glow = p.target ? 15 + Math.sin(p.pulse * 3) * 5 : p.hazard ? 24 : 8;
     ctx.save();
@@ -381,7 +390,8 @@
     }
     ctx.shadowColor = p.color; ctx.shadowBlur = glow;
     const g = ctx.createRadialGradient(p.x - p.r * .34, p.y - p.r * .38, p.r * .05, p.x, p.y, p.r);
-    if (p.hazard) { g.addColorStop(0, '#171a2f'); g.addColorStop(.75, '#03040b'); g.addColorStop(1, '#000'); }
+    if (p.hazardType === 'pulsar') { g.addColorStop(0, '#ffffff'); g.addColorStop(.22, '#9cf4ff'); g.addColorStop(.62, '#256fa8'); g.addColorStop(1, '#07152d'); }
+    else if (p.hazard) { g.addColorStop(0, '#171a2f'); g.addColorStop(.75, '#03040b'); g.addColorStop(1, '#000'); }
     else { g.addColorStop(0, tint(p.color, 62)); g.addColorStop(.44, p.color); g.addColorStop(1, tint(p.color, -48)); }
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
     ctx.shadowBlur = 0;
@@ -391,19 +401,20 @@
         const a = ((p.seed * .17 + i * 2.1) % TAU), rr = p.r * (.12 + (i % 2) * .08);
         ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * p.r * .45, p.y + Math.sin(a) * p.r * .4, rr, 0, TAU); ctx.fill();
       }
+    } else if (p.hazardType === 'pulsar') {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.pulse * .9); ctx.strokeStyle = '#9cf4ffbb'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-p.r * 4.5, 0); ctx.lineTo(p.r * 4.5, 0); ctx.stroke();
+      ctx.globalAlpha = .4; ctx.beginPath(); ctx.arc(0, 0, p.r * (1.8 + Math.sin(p.pulse * 2) * .2), 0, TAU); ctx.stroke(); ctx.restore();
     } else {
       for (let ring = 0; ring < 3; ring++) {
         ctx.globalAlpha = .65 - ring * .16; ctx.strokeStyle = ring === 1 ? '#6ee7ff' : '#c081ff'; ctx.lineWidth = 2 - ring * .35;
         ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * (1.65 + ring * .38), p.r * (.36 + ring * .1), p.pulse * .22 - .35, 0, TAU); ctx.stroke();
       }
       ctx.globalAlpha = .7; ctx.fillStyle = '#d6b2ff'; ctx.font = '800 9px system-ui'; ctx.textAlign = 'center';
-      ctx.fillText('GRAVIDADE', p.x, p.y - p.r - 17);
     }
     if (p.target) {
       ctx.globalAlpha = .55; ctx.strokeStyle = p.color; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 9 + Math.sin(p.pulse * 3) * 3, 0, TAU); ctx.stroke();
-      ctx.globalAlpha = .9; ctx.fillStyle = '#ffffff'; ctx.font = '800 9px system-ui'; ctx.textAlign = 'center';
-      ctx.fillText('ALVO', p.x, p.y - p.r - 15);
     }
     if (!p.hazard && p.seed % 4 === 1) {
       const moonA = p.pulse * .55 + p.seed;
@@ -463,14 +474,14 @@
     const points = []; let outcome = 'open';
     for (let i = 0; i < 46; i++) {
       const step = .034; let ax = 0, ay = 0;
-      for (const p of planets) if (p.hazard || p === target) {
+      for (const p of planets) if (p.hazard || p.target) {
         const dx = p.x - x, dy = p.y - y, d2 = Math.max(500, dx * dx + dy * dy), d = Math.sqrt(d2), g = (p.hazard ? p.gravity : 165000) / d2;
         ax += dx / d * g; ay += dy / d * g;
       }
       vx += ax * step; vy += ay * step; x += vx * step; y += vy * step; points.push({ x, y });
       for (const p of planets) {
         if (p === current) continue;
-        if (Math.hypot(x - p.x, y - p.y) < p.r + 7) { outcome = p === target ? 'safe' : 'danger'; break; }
+        if (Math.hypot(x - p.x, y - p.y) < p.r + 7) { outcome = p.target ? 'safe' : 'danger'; break; }
       }
       if (outcome === 'open') for (const a of asteroids) {
         if (Math.hypot(x - a.x, y - a.y) < a.r + 7) { outcome = 'danger'; break; }
@@ -487,20 +498,7 @@
       ctx.globalAlpha = (1 - i / Math.max(1, points.length)) * (holding ? .9 : .52); ctx.fillStyle = routeColor;
       ctx.beginPath(); ctx.arc(p.x, p.y, i % 8 === 0 ? 2.8 : 1.7, 0, TAU); ctx.fill();
     });
-    const arrowLength = 30; ctx.globalAlpha = .9; ctx.strokeStyle = routeColor; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.moveTo(ship.x, ship.y); ctx.lineTo(ship.x + Math.cos(tangent) * arrowLength, ship.y + Math.sin(tangent) * arrowLength); ctx.stroke();
-    ctx.translate(ship.x + Math.cos(tangent) * arrowLength, ship.y + Math.sin(tangent) * arrowLength); ctx.rotate(tangent);
-    ctx.fillStyle = routeColor; ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-3, -5); ctx.lineTo(-3, 5); ctx.closePath(); ctx.fill();
     ctx.restore();
-    ui.aimCoach.classList.toggle('safe', outcome === 'safe');
-    ui.aimCoach.classList.toggle('danger', outcome === 'danger');
-    if (holding) {
-      ui.aimStatus.textContent = outcome === 'safe' ? 'ROTA SEGURA' : outcome === 'danger' ? 'PERIGO: BURACO NEGRO' : `MIRA TRAVADA · ${Math.round(previewCharge * 100)}%`;
-      ui.aimHint.textContent = 'Solte para lançar';
-    } else {
-      ui.aimStatus.textContent = outcome === 'safe' ? 'AGORA! ROTA SEGURA' : outcome === 'danger' ? 'ROTA CAPTURADA' : 'MIRA EM MOVIMENTO';
-      ui.aimHint.textContent = outcome === 'safe' ? 'Segure para travar esta rota' : 'Espere a linha apontar para o planeta';
-    }
   }
 
   function drawParticles() {
@@ -562,7 +560,7 @@
   document.querySelector('#play-button').addEventListener('click', begin);
   document.querySelector('#retry-button').addEventListener('click', restart);
   document.querySelector('#continue-button').addEventListener('click', continueRun);
-  document.querySelector('#home-button').addEventListener('click', () => { state = 'menu'; cameraY = cameraTargetY = 0; ui.over.classList.remove('active'); ui.start.classList.add('active'); ui.ad.classList.remove('visible'); ui.aimCoach.classList.remove('visible'); seedMenuWorld(); });
+  document.querySelector('#home-button').addEventListener('click', () => { state = 'menu'; cameraY = cameraTargetY = 0; ui.over.classList.remove('active'); ui.start.classList.add('active'); ui.ad.classList.remove('visible'); seedMenuWorld(); });
   document.querySelector('#shop-button').addEventListener('click', openShop);
   document.querySelector('#close-shop').addEventListener('click', closeShop);
   document.querySelector('#sound-button').addEventListener('click', e => { save.sound = !save.sound; e.currentTarget.textContent = save.sound ? 'SOM LIGADO' : 'SOM DESLIGADO'; e.currentTarget.setAttribute('aria-pressed', save.sound); persist(); });
@@ -570,7 +568,10 @@
   document.querySelectorAll('[data-product]').forEach(b => b.addEventListener('click', async () => {
     const product = b.dataset.product, result = await window.OrbitaMonetization.purchase(product);
     if (result.success) {
+      if (product === 'dust_500') save.coins += 500;
       if (product === 'starter_pack') save.coins += 1500;
+      if (product === 'dust_5000') save.coins += 5000;
+      if (product === 'nova_ship' && !save.owned.includes('nova')) { save.owned.push('nova'); save.selected = 'nova'; }
       if (product === 'remove_ads') { save.noAds = true; ui.ad.classList.remove('visible'); }
       persist(); renderSkins();
     } else toast('Compra simulada — pronta para conectar à loja.');
