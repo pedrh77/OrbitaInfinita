@@ -10,7 +10,9 @@
     shopCoins: document.querySelector('#shop-coins'), final: document.querySelector('#final-score'),
     result: document.querySelector('#result-copy'), combo: document.querySelector('#combo'),
     toast: document.querySelector('#toast'), ad: document.querySelector('#ad-banner'),
-    continueButton: document.querySelector('#continue-button'), skins: document.querySelector('#skins')
+    continueButton: document.querySelector('#continue-button'), skins: document.querySelector('#skins'),
+    aimCoach: document.querySelector('#aim-coach'), aimStatus: document.querySelector('#aim-status'),
+    aimHint: document.querySelector('#aim-hint'), sector: document.querySelector('#sector')
   };
 
   const TAU = Math.PI * 2;
@@ -30,6 +32,7 @@
   let stars = [], planets = [], particles = [], trail = [];
   let ship, current, target, score = 0, streak = 0, cameraY = 0, cameraTargetY = 0;
   let holding = false, charge = 0, chargeDir = 1, continued = false, shake = 0;
+  let runSeed = 0, random = Math.random;
   let audioCtx = null;
 
   window.OrbitaAds = window.OrbitaAds || {
@@ -83,6 +86,8 @@
   function begin() {
     score = 0; streak = 0; continued = false; holding = false; charge = .15; chargeDir = 1;
     cameraY = 0; cameraTargetY = 0; trail = []; particles = [];
+    runSeed = Math.floor(Math.random() * 900000) + 100000;
+    random = mulberry32(runSeed);
     current = planet(W * .5, H * .72, 39, '#7c5cff', 10);
     current.visited = true;
     planets = [current];
@@ -92,7 +97,9 @@
     state = 'playing';
     ui.start.classList.remove('active'); ui.over.classList.remove('active'); ui.shop.classList.remove('open');
     ui.ad.classList.toggle('visible', !save.noAds);
+    ui.aimCoach.classList.add('visible');
     ui.score.textContent = '0';
+    ui.sector.textContent = 'SETOR 01 · PROCEDURAL';
     ping(380, .06, 'sine');
   }
 
@@ -100,16 +107,23 @@
     const level = score + 1;
     const gapY = Math.min(H * .37, 205 + level * 2.4);
     const margin = 58;
-    let x = W * (.2 + Math.random() * .6);
+    let x = W * (.16 + random() * .68);
     if (Math.abs(x - current.x) < W * .17) x = x < W / 2 ? margin : W - margin;
-    const r = Math.max(21, 35 - level * .28 + Math.random() * 10);
+    const r = Math.max(21, 35 - level * .28 + random() * 10);
     target = planet(Math.max(margin, Math.min(W - margin, x)), current.y - gapY, r, palette[level % palette.length], level * 37);
     target.target = true;
     planets.push(target);
-    if (level > 3 && level % 3 === 0) {
-      const ox = (current.x + target.x) / 2 + (Math.random() - .5) * W * .22;
-      const oy = (current.y + target.y) / 2;
-      planets.push({ ...planet(ox, oy, 13 + Math.random() * 8, '#303655', 100 + level), hazard: true });
+    const blackHoleCount = level < 3 ? 0 : Math.min(3, 1 + Math.floor((level - 3) / 6));
+    for (let i = 0; i < blackHoleCount; i++) {
+      if (level > 3 && random() < .22) continue;
+      let ox, oy;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        ox = W * (.13 + random() * .74);
+        oy = current.y - gapY * (.28 + random() * .48);
+        if (Math.hypot(ox - current.x, oy - current.y) > 82 && Math.hypot(ox - target.x, oy - target.y) > 76) break;
+      }
+      const hole = { ...planet(ox, oy, 14 + random() * 7, '#9b63ff', 100 + level * 7 + i), hazard: true, gravity: 480000 + level * 9000 };
+      planets.push(hole);
     }
   }
 
@@ -162,7 +176,7 @@
         if (p.hazard || p === target) {
           const dx = p.x - ship.x, dy = p.y - ship.y;
           const d2 = Math.max(500, dx * dx + dy * dy);
-          const g = (p.hazard ? 420000 : 165000) / d2;
+          const g = (p.hazard ? p.gravity : 165000) / d2;
           const d = Math.sqrt(d2);
           ax += dx / d * g; ay += dy / d * g;
         }
@@ -199,6 +213,7 @@
     const reward = 3 + Math.min(12, streak * 2);
     save.coins += reward; save.best = Math.max(save.best, score); persist();
     ui.score.textContent = score;
+    ui.sector.textContent = `SETOR ${String(score + 1).padStart(2, '0')} · PROCEDURAL`;
     p.target = false; p.visited = true; current = p;
     ship.mode = 'orbit'; ship.orbitRadius = current.r + 19;
     ship.angle = Math.atan2(ship.y - p.y, ship.x - p.x);
@@ -209,13 +224,13 @@
     burst(p.x, p.y, p.color, centerHit ? 24 : 14, 155);
     shake = .4; ping(700 + Math.min(score, 12) * 28, .1, 'sine');
     if (centerHit && streak >= 2) popCombo(streak);
-    planets = planets.filter(q => q === current || q === target || q.hazard || q.y > cameraY - 150);
+    planets = planets.filter(q => q === current || q === target || (q.y - cameraTargetY > -180 && q.y - cameraTargetY < H + 180));
     spawnTarget();
   }
 
   function lose() {
     if (state !== 'playing') return;
-    state = 'over'; holding = false; save.runs += 1; persist();
+    state = 'over'; holding = false; ui.aimCoach.classList.remove('visible'); save.runs += 1; persist();
     burst(ship.x, ship.y, skinColor(), 30, 210); shake = 1;
     ping(110, .22, 'sawtooth');
     setTimeout(() => {
@@ -232,7 +247,7 @@
     const ok = await window.OrbitaAds.showRewarded();
     ui.continueButton.disabled = false;
     if (!ok) return toast('O anúncio não ficou disponível.');
-    continued = true; ui.over.classList.remove('active'); state = 'playing';
+    continued = true; ui.over.classList.remove('active'); state = 'playing'; ui.aimCoach.classList.add('visible');
     ship.mode = 'orbit'; ship.angle = -Math.PI / 2; ship.vx = ship.vy = 0; placeOrbitShip();
     toast('Sinal recuperado!'); ping(620, .12, 'sine');
   }
@@ -284,7 +299,7 @@
   }
 
   function drawPlanet(p) {
-    const glow = p.target ? 15 + Math.sin(p.pulse * 3) * 5 : 8;
+    const glow = p.target ? 15 + Math.sin(p.pulse * 3) * 5 : p.hazard ? 24 : 8;
     ctx.save();
     ctx.shadowColor = p.color; ctx.shadowBlur = glow;
     const g = ctx.createRadialGradient(p.x - p.r * .34, p.y - p.r * .38, p.r * .05, p.x, p.y, p.r);
@@ -299,11 +314,18 @@
         ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * p.r * .45, p.y + Math.sin(a) * p.r * .4, rr, 0, TAU); ctx.fill();
       }
     } else {
-      ctx.strokeStyle = '#ad8cff88'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * 1.8, p.r * .45, -.2, 0, TAU); ctx.stroke();
+      for (let ring = 0; ring < 3; ring++) {
+        ctx.globalAlpha = .65 - ring * .16; ctx.strokeStyle = ring === 1 ? '#6ee7ff' : '#c081ff'; ctx.lineWidth = 2 - ring * .35;
+        ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * (1.65 + ring * .38), p.r * (.36 + ring * .1), p.pulse * .22 - .35, 0, TAU); ctx.stroke();
+      }
+      ctx.globalAlpha = .7; ctx.fillStyle = '#d6b2ff'; ctx.font = '800 9px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText('GRAVIDADE', p.x, p.y - p.r - 17);
     }
     if (p.target) {
       ctx.globalAlpha = .55; ctx.strokeStyle = p.color; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 9 + Math.sin(p.pulse * 3) * 3, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = .9; ctx.fillStyle = '#ffffff'; ctx.font = '800 9px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText('ALVO', p.x, p.y - p.r - 15);
     }
     ctx.restore();
   }
@@ -322,25 +344,52 @@
     ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(7, 8); ctx.lineTo(2, 6); ctx.lineTo(0, 12); ctx.lineTo(-2, 6); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill();
     ctx.shadowBlur = 0; ctx.fillStyle = '#151933'; ctx.beginPath(); ctx.arc(0, -2, 2.8, 0, TAU); ctx.fill();
     ctx.restore();
-    if (holding) drawPrediction();
+    if (ship.mode === 'orbit') drawPrediction();
   }
 
   function drawPrediction() {
     const tangent = ship.angle + Math.PI / 2 * ship.dir, outward = ship.angle;
-    const speed = 255 + charge * 290;
+    const previewCharge = holding ? charge : .54;
+    const speed = 255 + previewCharge * 290;
     let x = ship.x, y = ship.y, vx = Math.cos(tangent) * speed + Math.cos(outward) * 68, vy = Math.sin(tangent) * speed + Math.sin(outward) * 68;
-    ctx.save();
-    for (let i = 0; i < 28; i++) {
+    const points = []; let outcome = 'open';
+    for (let i = 0; i < 46; i++) {
       const step = .034; let ax = 0, ay = 0;
       for (const p of planets) if (p.hazard || p === target) {
-        const dx = p.x - x, dy = p.y - y, d2 = Math.max(500, dx * dx + dy * dy), d = Math.sqrt(d2), g = (p.hazard ? 420000 : 165000) / d2;
+        const dx = p.x - x, dy = p.y - y, d2 = Math.max(500, dx * dx + dy * dy), d = Math.sqrt(d2), g = (p.hazard ? p.gravity : 165000) / d2;
         ax += dx / d * g; ay += dy / d * g;
       }
-      vx += ax * step; vy += ay * step; x += vx * step; y += vy * step;
-      ctx.globalAlpha = (1 - i / 28) * .75; ctx.fillStyle = i % 2 ? skinColor() : '#fff';
-      ctx.beginPath(); ctx.arc(x, y, i % 4 === 0 ? 2.2 : 1.3, 0, TAU); ctx.fill();
+      vx += ax * step; vy += ay * step; x += vx * step; y += vy * step; points.push({ x, y });
+      for (const p of planets) {
+        if (p === current) continue;
+        if (Math.hypot(x - p.x, y - p.y) < p.r + 7) { outcome = p === target ? 'safe' : 'danger'; break; }
+      }
+      if (outcome !== 'open') break;
     }
+    const routeColor = outcome === 'safe' ? '#70f0aa' : outcome === 'danger' ? '#c081ff' : '#6ee7ff';
+    ctx.save();
+    ctx.strokeStyle = routeColor; ctx.lineWidth = holding ? 2 : 1.3; ctx.setLineDash([3, 7]); ctx.globalAlpha = holding ? .9 : .48;
+    ctx.beginPath(); ctx.moveTo(ship.x, ship.y); points.forEach(p => ctx.lineTo(p.x, p.y)); ctx.stroke();
+    ctx.setLineDash([]);
+    points.forEach((p, i) => {
+      if (i % 4) return;
+      ctx.globalAlpha = (1 - i / Math.max(1, points.length)) * (holding ? .9 : .52); ctx.fillStyle = routeColor;
+      ctx.beginPath(); ctx.arc(p.x, p.y, i % 8 === 0 ? 2.8 : 1.7, 0, TAU); ctx.fill();
+    });
+    const arrowLength = 30; ctx.globalAlpha = .9; ctx.strokeStyle = routeColor; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(ship.x, ship.y); ctx.lineTo(ship.x + Math.cos(tangent) * arrowLength, ship.y + Math.sin(tangent) * arrowLength); ctx.stroke();
+    ctx.translate(ship.x + Math.cos(tangent) * arrowLength, ship.y + Math.sin(tangent) * arrowLength); ctx.rotate(tangent);
+    ctx.fillStyle = routeColor; ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-3, -5); ctx.lineTo(-3, 5); ctx.closePath(); ctx.fill();
     ctx.restore();
+    ui.aimCoach.classList.toggle('safe', outcome === 'safe');
+    ui.aimCoach.classList.toggle('danger', outcome === 'danger');
+    if (holding) {
+      ui.aimStatus.textContent = outcome === 'safe' ? 'ROTA SEGURA' : outcome === 'danger' ? 'PERIGO: BURACO NEGRO' : `MIRA TRAVADA · ${Math.round(previewCharge * 100)}%`;
+      ui.aimHint.textContent = 'Solte para lançar';
+    } else {
+      ui.aimStatus.textContent = outcome === 'safe' ? 'AGORA! ROTA SEGURA' : outcome === 'danger' ? 'ROTA CAPTURADA' : 'MIRA EM MOVIMENTO';
+      ui.aimHint.textContent = outcome === 'safe' ? 'Segure para travar esta rota' : 'Espere a linha apontar para o planeta';
+    }
   }
 
   function drawParticles() {
@@ -402,7 +451,7 @@
   document.querySelector('#play-button').addEventListener('click', begin);
   document.querySelector('#retry-button').addEventListener('click', restart);
   document.querySelector('#continue-button').addEventListener('click', continueRun);
-  document.querySelector('#home-button').addEventListener('click', () => { state = 'menu'; cameraY = cameraTargetY = 0; ui.over.classList.remove('active'); ui.start.classList.add('active'); ui.ad.classList.remove('visible'); seedMenuWorld(); });
+  document.querySelector('#home-button').addEventListener('click', () => { state = 'menu'; cameraY = cameraTargetY = 0; ui.over.classList.remove('active'); ui.start.classList.add('active'); ui.ad.classList.remove('visible'); ui.aimCoach.classList.remove('visible'); seedMenuWorld(); });
   document.querySelector('#shop-button').addEventListener('click', openShop);
   document.querySelector('#close-shop').addEventListener('click', closeShop);
   document.querySelector('#sound-button').addEventListener('click', e => { save.sound = !save.sound; e.currentTarget.textContent = save.sound ? 'SOM LIGADO' : 'SOM DESLIGADO'; e.currentTarget.setAttribute('aria-pressed', save.sound); persist(); });

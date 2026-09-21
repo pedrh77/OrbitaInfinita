@@ -19,19 +19,28 @@
       <div class="score-block">
         <span id="score">0</span>
         <small>RECORDE <b id="best">0</b></small>
+        <small id="sector" class="sector">SETOR 01 · PROCEDURAL</small>
       </div>
-      <button id="shop-button" class="icon-button" aria-label="Abrir hangar">
-        <span class="coin">✦</span><span id="coins">0</span>
+      <button id="shop-button" class="icon-button" aria-label="Abrir loja">
+        <span class="shop-label">LOJA</span><span class="coin">✦</span><span id="coins">0</span>
       </button>
     </header>
 
     <div id="combo" class="combo" aria-hidden="true">PERFEITO ×2</div>
+    <div id="aim-coach" class="aim-coach" aria-live="polite">
+      <b id="aim-status">MIRA EM MOVIMENTO</b>
+      <span id="aim-hint">Segure quando a rota apontar para o planeta</span>
+    </div>
 
     <section id="start-screen" class="screen active">
       <div class="logo-planet" aria-hidden="true"><span></span></div>
-      <p class="eyebrow">UMA VIAGEM. INFINITOS MUNDOS.</p>
+      <p class="eyebrow">UNIVERSO PROCEDURAL · SEM FIM</p>
       <h1>Órbita<br><em>Infinita</em></h1>
-      <p class="instruction"><b>Segure</b> para carregar<br><b>solte</b> para lançar</p>
+      <div class="how-to" aria-label="Como jogar">
+        <span><b>1</b> Observe a linha da mira</span>
+        <span><b>2</b> Segure para travar e carregar</span>
+        <span><b>3</b> Solte para lançar</span>
+      </div>
       <button id="play-button" class="primary">JOGAR <span>→</span></button>
       <button id="sound-button" class="text-button" aria-pressed="true">SOM LIGADO</button>
     </section>
