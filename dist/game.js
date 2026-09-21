@@ -96,7 +96,7 @@
   }
 
   function planet(x, y, r, color, seed) {
-    return { x, y, r, color, seed, pulse: Math.random() * TAU, visited: false, target: false };
+    return { x, y, r, color, seed, style: Math.abs(Math.floor(seed)) % 4, pulse: Math.random() * TAU, visited: false, target: false };
   }
 
   function findFreePosition(r, yMin, yMax, padding = 24, xMin = 58, xMax = W - 58) {
@@ -106,7 +106,10 @@
     for (let attempt = 0; attempt < 42; attempt++) {
       const candidate = { x: lowX + random() * Math.max(1, highX - lowX), y: lowY + random() * Math.max(1, highY - lowY) };
       let clearance = Infinity;
-      for (const p of planets) clearance = Math.min(clearance, Math.hypot(candidate.x - p.x, candidate.y - p.y) - r - p.r);
+      for (const p of planets) {
+        const px = p.orbitMotion?.cx ?? p.x, py = p.orbitMotion?.cy ?? p.y;
+        clearance = Math.min(clearance, Math.hypot(candidate.x - px, candidate.y - py) - r - p.r - (p.orbitMotion?.radius ?? 0));
+      }
       for (const a of asteroids) clearance = Math.min(clearance, Math.hypot(candidate.x - a.x, candidate.y - a.y) - r - a.r);
       for (const c of collectibles) if (!c.collected) clearance = Math.min(clearance, Math.hypot(candidate.x - c.x, candidate.y - c.y) - r - c.r);
       if (clearance > bestClearance) { best = candidate; bestClearance = clearance; }
@@ -141,8 +144,15 @@
     targets = [];
     for (let i = 0; i < choiceCount; i++) {
       const r = Math.max(20, 32 - level * .22 + random() * 9);
-      const pos = findFreePosition(r, current.y - gapY * 1.62, current.y - gapY * .56, 34, margin, W - margin);
+      const orbitRadius = 18 + random() * 20;
+      const pos = findFreePosition(r + orbitRadius, current.y - gapY * 1.62, current.y - gapY * .56, 34, margin, W - margin);
       const next = planet(pos.x, pos.y, r, palette[(level + i * 2) % palette.length], level * 37 + i * 11);
+      next.orbitMotion = {
+        cx: pos.x, cy: pos.y, radius: orbitRadius,
+        angle: random() * TAU,
+        speed: (.42 + random() * .28) * (random() < .5 ? -1 : 1)
+      };
+      movePlanetOnOrbit(next, 0);
       next.target = true; planets.push(next); targets.push(next);
     }
     const collectibleTarget = targets[Math.floor(random() * targets.length)];
@@ -179,6 +189,22 @@
   function placeOrbitShip() {
     ship.x = current.x;
     ship.y = current.y - ship.orbitRadius;
+  }
+
+  function movePlanetOnOrbit(p, dt) {
+    if (!p.orbitMotion) return;
+    p.orbitMotion.angle = (p.orbitMotion.angle + p.orbitMotion.speed * dt + TAU) % TAU;
+    p.x = p.orbitMotion.cx + Math.cos(p.orbitMotion.angle) * p.orbitMotion.radius;
+    p.y = p.orbitMotion.cy + Math.sin(p.orbitMotion.angle) * p.orbitMotion.radius;
+  }
+
+  function futurePlanetPosition(p, seconds) {
+    if (!p.orbitMotion) return { x: p.x, y: p.y };
+    const angle = p.orbitMotion.angle + p.orbitMotion.speed * seconds;
+    return {
+      x: p.orbitMotion.cx + Math.cos(angle) * p.orbitMotion.radius,
+      y: p.orbitMotion.cy + Math.sin(angle) * p.orbitMotion.radius
+    };
   }
 
   function press(e) {
@@ -230,6 +256,7 @@
     cameraY += cameraDelta * Math.min(1, worldDt * 3.5);
     if (Math.abs(cameraDelta) < .35) cameraY = cameraTargetY;
     planets.forEach(p => p.pulse += worldDt * 1.35);
+    planets.forEach(p => { if (p !== current) movePlanetOnOrbit(p, worldDt); });
     asteroids.forEach(a => a.rotation += a.spin * worldDt);
     collectibles.forEach(c => c.pulse += worldDt * 3);
     updateParticles(worldDt);
@@ -287,7 +314,7 @@
     save.coins += reward; save.best = Math.max(save.best, score); persist();
     ui.score.textContent = score;
     ui.sector.textContent = `SETOR ${String(score + 1).padStart(2, '0')}`;
-    p.target = false; p.visited = true; current = p;
+    p.target = false; p.visited = true; p.orbitMotion = null; current = p;
     ship.mode = 'orbit'; ship.orbitRadius = current.r + 19;
     ship.aimAngle = -Math.PI / 2;
     charge = .35;
@@ -410,7 +437,7 @@
   function drawPlanet(p) {
     const glow = p.target ? 15 + Math.sin(p.pulse * 3) * 5 : p.hazard ? 24 : 8;
     ctx.save();
-    if (!p.hazard && p.seed % 3 === 0) {
+    if (!p.hazard && p.style === 1) {
       ctx.globalAlpha = .55; ctx.strokeStyle = tint(p.color, 28); ctx.lineWidth = Math.max(2, p.r * .1);
       ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * 1.55, p.r * .36, -.32, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
     }
@@ -427,22 +454,25 @@
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
     ctx.shadowBlur = 0;
     if (!p.hazard) {
-      ctx.save();
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r - 1, 0, TAU); ctx.clip();
-      const surfaceSpin = ((p.pulse * p.r * .62 + p.seed * 13) % (p.r * 2.8)) - p.r * 1.4;
-      ctx.globalAlpha = .2; ctx.strokeStyle = tint(p.color, 72); ctx.lineWidth = Math.max(2, p.r * .11);
-      for (let band = -1; band <= 1; band++) {
-        ctx.beginPath();
-        ctx.ellipse(p.x + surfaceSpin + band * p.r * 1.4, p.y, p.r * .4, p.r * 1.08, 0, 0, TAU);
-        ctx.stroke();
+      if (p.style >= 2) {
+        ctx.save();
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r - 1, 0, TAU); ctx.clip();
+        const surfaceSpin = ((p.pulse * p.r * .62 + p.seed * 13) % (p.r * 2.8)) - p.r * 1.4;
+        ctx.globalAlpha = .2; ctx.strokeStyle = tint(p.color, 72); ctx.lineWidth = Math.max(2, p.r * .11);
+        for (let band = -1; band <= 1; band++) {
+          ctx.beginPath();
+          ctx.ellipse(p.x + surfaceSpin + band * p.r * 1.4, p.y, p.r * .4, p.r * 1.08, 0, 0, TAU);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = .12; ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1, p.r * .045);
+        ctx.beginPath(); ctx.ellipse(p.x, p.y - p.r * .28, p.r * .94, p.r * .18, 0, 0, TAU); ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(p.x, p.y + p.r * .3, p.r * .9, p.r * .16, 0, 0, TAU); ctx.stroke();
+        ctx.restore();
       }
-      ctx.globalAlpha = .12; ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1, p.r * .045);
-      ctx.beginPath(); ctx.ellipse(p.x, p.y - p.r * .28, p.r * .94, p.r * .18, 0, 0, TAU); ctx.stroke();
-      ctx.beginPath(); ctx.ellipse(p.x, p.y + p.r * .3, p.r * .9, p.r * .16, 0, 0, TAU); ctx.stroke();
-      ctx.restore();
-      ctx.globalAlpha = .24; ctx.fillStyle = '#fff';
+      ctx.globalAlpha = p.style < 2 ? .18 : .24; ctx.fillStyle = '#fff';
       for (let i = 0; i < 3; i++) {
-        const a = ((p.seed * .17 + i * 2.1 + p.pulse * .72) % TAU), rr = p.r * (.12 + (i % 2) * .08);
+        const surfaceTurn = p.style < 2 ? 0 : p.pulse * .72;
+        const a = ((p.seed * .17 + i * 2.1 + surfaceTurn) % TAU), rr = p.r * (.12 + (i % 2) * .08);
         ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * p.r * .45, p.y + Math.sin(a) * p.r * .4, rr, 0, TAU); ctx.fill();
       }
     } else if (p.hazardType === 'pulsar') {
@@ -459,7 +489,7 @@
       ctx.globalAlpha = .55; ctx.strokeStyle = p.color; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 9 + Math.sin(p.pulse * 3) * 3, 0, TAU); ctx.stroke();
     }
-    if (!p.hazard && p.seed % 4 === 1) {
+    if (!p.hazard && p.style === 0) {
       const moonA = p.pulse * .55 + p.seed;
       const mx = p.x + Math.cos(moonA) * p.r * 1.65, my = p.y + Math.sin(moonA) * p.r * .7;
       ctx.globalAlpha = .85; ctx.fillStyle = '#dbe2ff'; ctx.shadowColor = '#9eb3ff'; ctx.shadowBlur = 7;
@@ -518,14 +548,16 @@
     for (let i = 0; i < 46; i++) {
       const step = .034; let ax = 0, ay = 0;
       for (const p of planets) if (p !== current || p.hazard) {
-        const dx = p.x - x, dy = p.y - y, d2 = Math.max(500, dx * dx + dy * dy), d = Math.sqrt(d2);
+        const future = futurePlanetPosition(p, (i + 1) * step);
+        const dx = future.x - x, dy = future.y - y, d2 = Math.max(500, dx * dx + dy * dy), d = Math.sqrt(d2);
         const planetGravity = 125000 * (.7 + p.r / 48), g = (p.hazard ? p.gravity : planetGravity) / d2;
         ax += dx / d * g; ay += dy / d * g;
       }
       vx += ax * step; vy += ay * step; x += vx * step; y += vy * step; points.push({ x, y });
       for (const p of planets) {
         if (p === current) continue;
-        if (Math.hypot(x - p.x, y - p.y) < p.r + 7) { outcome = p.target ? 'safe' : 'danger'; break; }
+        const future = futurePlanetPosition(p, (i + 1) * step);
+        if (Math.hypot(x - future.x, y - future.y) < p.r + 7) { outcome = p.target ? 'safe' : 'danger'; break; }
       }
       if (outcome === 'open') for (const a of asteroids) {
         if (Math.hypot(x - a.x, y - a.y) < a.r + 7) { outcome = 'danger'; break; }
