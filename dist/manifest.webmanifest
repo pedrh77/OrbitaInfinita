@@ -1,0 +1,9 @@
+{
+  "name": "Órbita Infinita",
+  "short_name": "Órbita",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#07091a",
+  "theme_color": "#07091a",
+  "orientation": "portrait"
+}
