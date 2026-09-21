@@ -29,7 +29,7 @@
   const defaults = { best: 0, coins: 0, selected: 'cometa', owned: ['cometa'], sound: true, runs: 0, noAds: false };
   let save = loadSave();
   let W = 0, H = 0, dpr = 1, last = 0, state = 'menu';
-  let stars = [], planets = [], particles = [], trail = [];
+  let stars = [], nebulae = [], comets = [], planets = [], particles = [], trail = [], asteroids = [], collectibles = [];
   let ship, current, target, score = 0, streak = 0, cameraY = 0, cameraTargetY = 0;
   let holding = false, charge = 0, chargeDir = 1, continued = false, shake = 0;
   let runSeed = 0, random = Math.random;
@@ -69,6 +69,15 @@
     stars = Array.from({ length: Math.floor(W * H / 4400) }, () => ({
       x: rnd() * W, y: rnd() * H, r: rnd() * 1.4 + .25, a: rnd() * .7 + .2, p: rnd() * 8
     }));
+    nebulae = Array.from({ length: 4 }, (_, i) => ({
+      x: rnd() * W, y: rnd() * H, r: 90 + rnd() * 150,
+      color: ['#713cff', '#1ba9c9', '#d73991', '#425fe0'][i], drift: .012 + rnd() * .02
+    }));
+    comets = Array.from({ length: 3 }, (_, i) => makeComet(rnd, i * 2.7));
+  }
+
+  function makeComet(rnd = Math.random, delay = 0) {
+    return { x: -80 - rnd() * W, y: rnd() * H * .7, vx: 120 + rnd() * 100, vy: 38 + rnd() * 45, life: delay };
   }
 
   function seedMenuWorld() {
@@ -85,7 +94,7 @@
 
   function begin() {
     score = 0; streak = 0; continued = false; holding = false; charge = .15; chargeDir = 1;
-    cameraY = 0; cameraTargetY = 0; trail = []; particles = [];
+    cameraY = 0; cameraTargetY = 0; trail = []; particles = []; asteroids = []; collectibles = [];
     runSeed = Math.floor(Math.random() * 900000) + 100000;
     random = mulberry32(runSeed);
     current = planet(W * .5, H * .72, 39, '#7c5cff', 10);
@@ -113,6 +122,10 @@
     target = planet(Math.max(margin, Math.min(W - margin, x)), current.y - gapY, r, palette[level % palette.length], level * 37);
     target.target = true;
     planets.push(target);
+    const collectibleT = .38 + random() * .24;
+    const routeX = current.x + (target.x - current.x) * collectibleT;
+    const routeY = current.y + (target.y - current.y) * collectibleT;
+    collectibles.push({ x: routeX + (random() - .5) * 54, y: routeY, r: 7, pulse: random() * TAU, collected: false });
     const blackHoleCount = level < 3 ? 0 : Math.min(3, 1 + Math.floor((level - 3) / 6));
     for (let i = 0; i < blackHoleCount; i++) {
       if (level > 3 && random() < .22) continue;
@@ -125,6 +138,16 @@
       const hole = { ...planet(ox, oy, 14 + random() * 7, '#9b63ff', 100 + level * 7 + i), hazard: true, gravity: 480000 + level * 9000 };
       planets.push(hole);
     }
+    const asteroidCount = level < 4 ? 0 : Math.min(5, 1 + Math.floor((level - 4) / 4));
+    for (let i = 0; i < asteroidCount; i++) {
+      const t = .2 + random() * .62;
+      const bx = current.x + (target.x - current.x) * t;
+      const by = current.y + (target.y - current.y) * t;
+      const asteroid = { x: bx + (random() - .5) * W * .38, y: by + (random() - .5) * 44, r: 7 + random() * 6, rotation: random() * TAU, spin: (random() - .5) * 1.4, seed: random() * 20 };
+      if (Math.hypot(asteroid.x - current.x, asteroid.y - current.y) > 70 && Math.hypot(asteroid.x - target.x, asteroid.y - target.y) > 65) asteroids.push(asteroid);
+    }
+    if (level === 3) toast('ANOMALIA: buracos negros alteram a rota.');
+    if (level === 4) toast('CUIDADO: campo de asteroides à frente.');
   }
 
   function placeOrbitShip() {
@@ -153,6 +176,7 @@
   }
 
   function update(dt) {
+    updateSpace(dt);
     if (state === 'menu') {
       planets.forEach((p, i) => p.pulse += dt * (.5 + i * .12));
       return;
@@ -161,6 +185,8 @@
     if (state !== 'playing') return;
     cameraY += (cameraTargetY - cameraY) * Math.min(1, dt * 3.5);
     planets.forEach(p => p.pulse += dt);
+    asteroids.forEach(a => a.rotation += a.spin * dt);
+    collectibles.forEach(c => c.pulse += dt * 3);
     updateParticles(dt);
     if (ship.mode === 'orbit') {
       if (!holding) ship.angle += ship.orbitSpeed * dt * ship.dir;
@@ -204,6 +230,14 @@
         return;
       }
     }
+    for (const a of asteroids) {
+      if (Math.hypot(ship.x - a.x, ship.y - a.y) < a.r + 7) { lose(); return; }
+    }
+    for (const c of collectibles) {
+      if (!c.collected && Math.hypot(ship.x - c.x, ship.y - c.y) < c.r + 11) {
+        c.collected = true; save.coins += 15; persist(); burst(c.x, c.y, '#ffcf5c', 18, 120); ping(980, .08, 'sine'); toast('+15 POEIRA ESTELAR');
+      }
+    }
   }
 
   function land(p) {
@@ -225,6 +259,8 @@
     shake = .4; ping(700 + Math.min(score, 12) * 28, .1, 'sine');
     if (centerHit && streak >= 2) popCombo(streak);
     planets = planets.filter(q => q === current || q === target || (q.y - cameraTargetY > -180 && q.y - cameraTargetY < H + 180));
+    asteroids = asteroids.filter(a => a.y - cameraTargetY > -180 && a.y - cameraTargetY < H + 180);
+    collectibles = collectibles.filter(c => !c.collected && c.y - cameraTargetY > -180 && c.y - cameraTargetY < H + 180);
     spawnTarget();
   }
 
@@ -265,17 +301,30 @@
     particles = particles.filter(p => p.life > 0);
   }
 
+  function updateSpace(dt) {
+    for (const c of comets) {
+      c.life -= dt;
+      if (c.life > 0) continue;
+      c.x += c.vx * dt; c.y += c.vy * dt;
+      if (c.x > W + 140 || c.y > H + 100) Object.assign(c, makeComet(Math.random, 3 + Math.random() * 6));
+    }
+  }
+
   function draw(time) {
     ctx.clearRect(0, 0, W, H);
     const grad = ctx.createRadialGradient(W * .5, H * .32, 0, W * .5, H * .35, H * .9);
     grad.addColorStop(0, '#171944'); grad.addColorStop(.58, '#090b23'); grad.addColorStop(1, '#050615');
     ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+    drawNebulae(time);
     drawStars(time);
+    drawComets();
     ctx.save();
     if (shake) ctx.translate((Math.random() - .5) * shake * 10, (Math.random() - .5) * shake * 10);
     ctx.translate(0, -cameraY);
     if (state === 'playing') drawRoute();
     planets.forEach(drawPlanet);
+    asteroids.forEach(drawAsteroid);
+    collectibles.forEach(drawCollectible);
     drawParticles();
     if ((state === 'playing' || state === 'over') && ship) drawShip();
     ctx.restore();
@@ -292,6 +341,31 @@
     ctx.restore();
   }
 
+  function drawNebulae(time) {
+    ctx.save(); ctx.globalCompositeOperation = 'screen';
+    for (const n of nebulae) {
+      const x = n.x + Math.sin(time * n.drift * .001) * 28;
+      const y = ((n.y - cameraY * .035) % (H + n.r * 2) + H + n.r * 2) % (H + n.r * 2) - n.r;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, n.r);
+      g.addColorStop(0, `${n.color}22`); g.addColorStop(.48, `${n.color}0d`); g.addColorStop(1, `${n.color}00`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, n.r, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawComets() {
+    ctx.save(); ctx.globalCompositeOperation = 'screen';
+    for (const c of comets) {
+      if (c.life > 0) continue;
+      const len = 58, angle = Math.atan2(c.vy, c.vx);
+      const g = ctx.createLinearGradient(c.x, c.y, c.x - Math.cos(angle) * len, c.y - Math.sin(angle) * len);
+      g.addColorStop(0, '#ffffffdd'); g.addColorStop(.18, '#6ee7ffaa'); g.addColorStop(1, '#6ee7ff00');
+      ctx.strokeStyle = g; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(c.x - Math.cos(angle) * len, c.y - Math.sin(angle) * len); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(c.x, c.y, 2.2, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function drawRoute() {
     if (!current || !target) return;
     ctx.save(); ctx.setLineDash([3, 10]); ctx.lineWidth = 1; ctx.strokeStyle = '#9ea7d026';
@@ -301,6 +375,10 @@
   function drawPlanet(p) {
     const glow = p.target ? 15 + Math.sin(p.pulse * 3) * 5 : p.hazard ? 24 : 8;
     ctx.save();
+    if (!p.hazard && p.seed % 3 === 0) {
+      ctx.globalAlpha = .55; ctx.strokeStyle = tint(p.color, 28); ctx.lineWidth = Math.max(2, p.r * .1);
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * 1.55, p.r * .36, -.32, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
+    }
     ctx.shadowColor = p.color; ctx.shadowBlur = glow;
     const g = ctx.createRadialGradient(p.x - p.r * .34, p.y - p.r * .38, p.r * .05, p.x, p.y, p.r);
     if (p.hazard) { g.addColorStop(0, '#171a2f'); g.addColorStop(.75, '#03040b'); g.addColorStop(1, '#000'); }
@@ -327,7 +405,37 @@
       ctx.globalAlpha = .9; ctx.fillStyle = '#ffffff'; ctx.font = '800 9px system-ui'; ctx.textAlign = 'center';
       ctx.fillText('ALVO', p.x, p.y - p.r - 15);
     }
+    if (!p.hazard && p.seed % 4 === 1) {
+      const moonA = p.pulse * .55 + p.seed;
+      const mx = p.x + Math.cos(moonA) * p.r * 1.65, my = p.y + Math.sin(moonA) * p.r * .7;
+      ctx.globalAlpha = .85; ctx.fillStyle = '#dbe2ff'; ctx.shadowColor = '#9eb3ff'; ctx.shadowBlur = 7;
+      ctx.beginPath(); ctx.arc(mx, my, Math.max(2.5, p.r * .11), 0, TAU); ctx.fill();
+    }
     ctx.restore();
+  }
+
+  function drawAsteroid(a) {
+    ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(a.rotation); ctx.fillStyle = '#5e6178'; ctx.strokeStyle = '#949ab7'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const angle = i / 8 * TAU, rr = a.r * (.72 + .28 * Math.sin(a.seed + i * 2.3));
+      const px = Math.cos(angle) * rr, py = Math.sin(angle) * rr;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.globalAlpha = .35; ctx.fillStyle = '#111522'; ctx.beginPath(); ctx.arc(-a.r * .18, -a.r * .12, a.r * .22, 0, TAU); ctx.fill(); ctx.restore();
+  }
+
+  function drawCollectible(c) {
+    if (c.collected) return;
+    const pulse = 1 + Math.sin(c.pulse) * .18;
+    ctx.save(); ctx.translate(c.x, c.y); ctx.scale(pulse, pulse); ctx.rotate(c.pulse * .18); ctx.shadowColor = '#ffcf5c'; ctx.shadowBlur = 18; ctx.fillStyle = '#ffcf5c';
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 4, r = i % 2 ? c.r * .42 : c.r;
+      i ? ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath(); ctx.fill(); ctx.restore();
   }
 
   function drawShip() {
@@ -363,6 +471,9 @@
       for (const p of planets) {
         if (p === current) continue;
         if (Math.hypot(x - p.x, y - p.y) < p.r + 7) { outcome = p === target ? 'safe' : 'danger'; break; }
+      }
+      if (outcome === 'open') for (const a of asteroids) {
+        if (Math.hypot(x - a.x, y - a.y) < a.r + 7) { outcome = 'danger'; break; }
       }
       if (outcome !== 'open') break;
     }
