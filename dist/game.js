@@ -9,10 +9,10 @@
     best: document.querySelector('#best'), coins: document.querySelector('#coins'),
     shopCoins: document.querySelector('#shop-coins'), final: document.querySelector('#final-score'),
     result: document.querySelector('#result-copy'), combo: document.querySelector('#combo'),
-    toast: document.querySelector('#toast'), ad: document.querySelector('#ad-banner'),
+    toast: document.querySelector('#toast'),
     continueButton: document.querySelector('#continue-button'), skins: document.querySelector('#skins'),
     trails: document.querySelector('#trails'), items: document.querySelector('#items'),
-    sector: document.querySelector('#sector')
+    sector: document.querySelector('#sector'), rewardDust: document.querySelector('#reward-dust')
   };
 
   const TAU = Math.PI * 2;
@@ -46,10 +46,6 @@
   let runSeed = 0, random = Math.random;
   let audioCtx = null;
 
-  window.OrbitaAds = window.OrbitaAds || {
-    showRewarded: async () => { await new Promise(r => setTimeout(r, 650)); return true; },
-    showInterstitial: () => Promise.resolve(true)
-  };
   window.OrbitaMonetization = window.OrbitaMonetization || {
     purchase: async product => ({ success: false, product, demo: true })
   };
@@ -132,7 +128,6 @@
     placeOrbitShip();
     state = 'playing';
     ui.start.classList.remove('active'); ui.over.classList.remove('active'); ui.shop.classList.remove('open');
-    ui.ad.classList.toggle('visible', !save.noAds);
     ui.score.textContent = '0';
     ui.sector.textContent = 'SETOR 01';
     ping(380, .06, 'sine');
@@ -222,7 +217,9 @@
   }
 
   function update(dt) {
-    updateSpace(dt);
+    const aimingInSlowMotion = state === 'playing' && ship?.mode === 'orbit' && holding;
+    const worldDt = aimingInSlowMotion ? dt * .18 : dt;
+    updateSpace(worldDt);
     if (state === 'menu') {
       planets.forEach((p, i) => p.pulse += dt * (.5 + i * .12));
       return;
@@ -230,12 +227,12 @@
     if (state === 'over') { updateParticles(dt); return; }
     if (state !== 'playing') return;
     const cameraDelta = cameraTargetY - cameraY;
-    cameraY += cameraDelta * Math.min(1, dt * 3.5);
+    cameraY += cameraDelta * Math.min(1, worldDt * 3.5);
     if (Math.abs(cameraDelta) < .35) cameraY = cameraTargetY;
-    planets.forEach(p => p.pulse += dt);
-    asteroids.forEach(a => a.rotation += a.spin * dt);
-    collectibles.forEach(c => c.pulse += dt * 3);
-    updateParticles(dt);
+    planets.forEach(p => p.pulse += worldDt * 1.35);
+    asteroids.forEach(a => a.rotation += a.spin * worldDt);
+    collectibles.forEach(c => c.pulse += worldDt * 3);
+    updateParticles(worldDt);
     if (ship.mode === 'orbit') {
       placeOrbitShip();
     } else if (ship.mode === 'flight') {
@@ -319,14 +316,16 @@
       ui.continueButton.style.display = continued ? 'none' : 'flex';
       ui.over.classList.add('active');
     }, 420);
-    if (!save.noAds && save.runs % 4 === 0) window.OrbitaAds.showInterstitial();
+    if (!save.noAds && save.runs % 4 === 0) {
+      window.OrbitaAds.showInterstitial('game-over').catch(() => {});
+    }
   }
 
   async function continueRun() {
     ui.continueButton.disabled = true;
-    const ok = await window.OrbitaAds.showRewarded();
+    const ad = await window.OrbitaAds.showRewarded('continue-run');
     ui.continueButton.disabled = false;
-    if (!ok) return toast('O anúncio não ficou disponível.');
+    if (!ad.rewarded) return toast(ad.unavailable ? 'Recompensa disponível no app Android.' : 'Assista até o fim para receber a recompensa.');
     continued = true; ui.over.classList.remove('active'); state = 'playing';
     ship.mode = 'orbit'; ship.aimAngle = -Math.PI / 2; ship.vx = ship.vy = 0; placeOrbitShip();
     toast('Sinal recuperado!'); ping(620, .12, 'sine');
@@ -428,9 +427,22 @@
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
     ctx.shadowBlur = 0;
     if (!p.hazard) {
-      ctx.globalAlpha = .18; ctx.fillStyle = '#fff';
+      ctx.save();
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r - 1, 0, TAU); ctx.clip();
+      const surfaceSpin = ((p.pulse * p.r * .62 + p.seed * 13) % (p.r * 2.8)) - p.r * 1.4;
+      ctx.globalAlpha = .2; ctx.strokeStyle = tint(p.color, 72); ctx.lineWidth = Math.max(2, p.r * .11);
+      for (let band = -1; band <= 1; band++) {
+        ctx.beginPath();
+        ctx.ellipse(p.x + surfaceSpin + band * p.r * 1.4, p.y, p.r * .4, p.r * 1.08, 0, 0, TAU);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = .12; ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1, p.r * .045);
+      ctx.beginPath(); ctx.ellipse(p.x, p.y - p.r * .28, p.r * .94, p.r * .18, 0, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(p.x, p.y + p.r * .3, p.r * .9, p.r * .16, 0, 0, TAU); ctx.stroke();
+      ctx.restore();
+      ctx.globalAlpha = .24; ctx.fillStyle = '#fff';
       for (let i = 0; i < 3; i++) {
-        const a = ((p.seed * .17 + i * 2.1 + p.pulse * .22) % TAU), rr = p.r * (.12 + (i % 2) * .08);
+        const a = ((p.seed * .17 + i * 2.1 + p.pulse * .72) % TAU), rr = p.r * (.12 + (i % 2) * .08);
         ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * p.r * .45, p.y + Math.sin(a) * p.r * .4, rr, 0, TAU); ctx.fill();
       }
     } else if (p.hazardType === 'pulsar') {
@@ -494,7 +506,7 @@
     ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(7, 8); ctx.lineTo(2, 6); ctx.lineTo(0, 12); ctx.lineTo(-2, 6); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill();
     ctx.shadowBlur = 0; ctx.fillStyle = '#151933'; ctx.beginPath(); ctx.arc(0, -2, 2.8, 0, TAU); ctx.fill();
     ctx.restore();
-    if (ship.mode === 'orbit' && holding) drawPrediction();
+    if (ship.mode === 'orbit') drawPrediction();
   }
 
   function drawPrediction() {
@@ -538,7 +550,7 @@
   }
 
   function drawCharge() {
-    const w = Math.min(220, W * .54), x = (W - w) / 2, y = H - (ui.ad.classList.contains('visible') ? 92 : 38);
+    const w = Math.min(220, W * .54), x = (W - w) / 2, y = H - 38;
     ctx.save(); ctx.fillStyle = '#11152fd9'; roundRect(x, y, w, 10, 5); ctx.fill();
     const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, '#6ee7ff'); g.addColorStop(.7, '#7c5cff'); g.addColorStop(1, '#ffcf5c');
     ctx.fillStyle = g; roundRect(x + 2, y + 2, (w - 4) * charge, 6, 3); ctx.fill(); ctx.restore();
@@ -630,18 +642,24 @@
   document.querySelector('#play-button').addEventListener('click', begin);
   document.querySelector('#retry-button').addEventListener('click', restart);
   document.querySelector('#continue-button').addEventListener('click', continueRun);
-  document.querySelector('#home-button').addEventListener('click', () => { state = 'menu'; cameraY = cameraTargetY = 0; ui.over.classList.remove('active'); ui.start.classList.add('active'); ui.ad.classList.remove('visible'); seedMenuWorld(); });
+  document.querySelector('#home-button').addEventListener('click', () => { state = 'menu'; cameraY = cameraTargetY = 0; ui.over.classList.remove('active'); ui.start.classList.add('active'); seedMenuWorld(); });
   document.querySelector('#shop-button').addEventListener('click', openShop);
   document.querySelector('#close-shop').addEventListener('click', closeShop);
   document.querySelector('#sound-button').addEventListener('click', e => { save.sound = !save.sound; e.currentTarget.textContent = save.sound ? 'SOM LIGADO' : 'SOM DESLIGADO'; e.currentTarget.setAttribute('aria-pressed', save.sound); persist(); });
-  document.querySelector('#ad-banner button').addEventListener('click', () => { ui.ad.classList.remove('visible'); toast('Anúncio fechado'); });
+  ui.rewardDust.addEventListener('click', async () => {
+    ui.rewardDust.disabled = true;
+    const ad = await window.OrbitaAds.showRewarded('dust-75');
+    ui.rewardDust.disabled = false;
+    if (!ad.rewarded) return toast(ad.unavailable ? 'Recompensa disponível no app Android.' : 'Assista até o fim para receber ✦ 75.');
+    save.coins += 75; persist(); renderShop(); toast('+75 POEIRA ESTELAR');
+  });
   document.querySelectorAll('[data-product]').forEach(b => b.addEventListener('click', async () => {
     const product = b.dataset.product, result = await window.OrbitaMonetization.purchase(product);
     if (result.success) {
       if (product === 'dust_500') save.coins += 500;
       if (product === 'starter_pack') save.coins += 1500;
       if (product === 'dust_5000') save.coins += 5000;
-      if (product === 'remove_ads') { save.noAds = true; ui.ad.classList.remove('visible'); }
+      if (product === 'remove_ads') save.noAds = true;
       persist(); renderShop();
     } else toast('Compra simulada — pronta para conectar à loja.');
   }));

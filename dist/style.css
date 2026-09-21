@@ -87,11 +87,10 @@ h2 { margin: 0 0 12px; font-size: 2.4rem; letter-spacing: -.05em; }
 .store-card b { margin: 12px 0 4px; font-size: .82rem; }
 .store-card small { color: var(--muted); }
 .store-note { color: #747b9e; text-align: center; font-size: .7rem; }
+.reward-offer { margin-top: 10px; }
+.reward-dust { border-color: #6ee7ff66; background: linear-gradient(145deg, #173652, #121635); }
+.reward-dust:disabled { opacity: .55; cursor: wait; }
 
-.ad-banner { position: absolute; z-index: 7; bottom: 0; left: 0; right: 0; height: calc(58px + env(safe-area-inset-bottom)); padding: 8px 50px max(8px, env(safe-area-inset-bottom)) 16px; display: none; align-items: center; justify-content: center; gap: 12px; background: #0c0f26ee; border-top: 1px solid #ffffff15; font-size: .75rem; }
-.ad-banner.visible { display: flex; }
-.ad-banner span { border: 1px solid #ffffff42; border-radius: 3px; padding: 2px 4px; color: var(--muted); font-size: .52rem; }
-.ad-banner button { position: absolute; right: 12px; border: 0; background: none; color: var(--muted); font-size: 1.2rem; }
 .toast { position: absolute; z-index: 12; left: 50%; bottom: 90px; transform: translate(-50%, 14px); width: max-content; max-width: 86%; padding: 12px 16px; border: 1px solid #ffffff22; border-radius: 999px; background: #151936eb; color: var(--white); font-size: .82rem; font-weight: 750; opacity: 0; transition: .25s; pointer-events: none; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
