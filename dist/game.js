@@ -42,7 +42,7 @@
   let W = 0, H = 0, dpr = 1, last = 0, state = 'menu';
   let stars = [], nebulae = [], comets = [], planets = [], particles = [], trail = [], asteroids = [], collectibles = [];
   let ship, current, targets = [], score = 0, streak = 0, cameraY = 0, cameraTargetY = 0;
-  let holding = false, charge = 0, chargeDir = 1, continued = false;
+  let holding = false, charge = .35, aimStartX = 0, aimStartY = 0, continued = false;
   let runSeed = 0, random = Math.random;
   let audioCtx = null;
 
@@ -103,8 +103,24 @@
     return { x, y, r, color, seed, pulse: Math.random() * TAU, visited: false, target: false };
   }
 
+  function findFreePosition(r, yMin, yMax, padding = 24, xMin = 58, xMax = W - 58) {
+    let best = { x: W / 2, y: (yMin + yMax) / 2 }, bestClearance = -Infinity;
+    const lowY = Math.min(yMin, yMax), highY = Math.max(yMin, yMax);
+    const lowX = Math.max(r + 8, Math.min(xMin, xMax)), highX = Math.min(W - r - 8, Math.max(xMin, xMax));
+    for (let attempt = 0; attempt < 42; attempt++) {
+      const candidate = { x: lowX + random() * Math.max(1, highX - lowX), y: lowY + random() * Math.max(1, highY - lowY) };
+      let clearance = Infinity;
+      for (const p of planets) clearance = Math.min(clearance, Math.hypot(candidate.x - p.x, candidate.y - p.y) - r - p.r);
+      for (const a of asteroids) clearance = Math.min(clearance, Math.hypot(candidate.x - a.x, candidate.y - a.y) - r - a.r);
+      for (const c of collectibles) if (!c.collected) clearance = Math.min(clearance, Math.hypot(candidate.x - c.x, candidate.y - c.y) - r - c.r);
+      if (clearance > bestClearance) { best = candidate; bestClearance = clearance; }
+      if (clearance >= padding) return candidate;
+    }
+    return best;
+  }
+
   function begin() {
-    score = 0; streak = 0; continued = false; holding = false; charge = .15; chargeDir = 1;
+    score = 0; streak = 0; continued = false; holding = false; charge = .35;
     cameraY = 0; cameraTargetY = 0; trail = []; particles = []; asteroids = []; collectibles = [];
     runSeed = Math.floor(Math.random() * 900000) + 100000;
     random = mulberry32(runSeed);
@@ -112,7 +128,7 @@
     current.visited = true;
     planets = [current];
     spawnTargets();
-    ship = { x: 0, y: 0, vx: 0, vy: 0, angle: -Math.PI * .22, orbitRadius: current.r + 19, mode: 'orbit', orbitSpeed: 1.48, dir: 1 };
+    ship = { x: 0, y: 0, vx: 0, vy: 0, aimAngle: -Math.PI / 2, orbitRadius: current.r + 19, mode: 'orbit' };
     placeOrbitShip();
     state = 'playing';
     ui.start.classList.remove('active'); ui.over.classList.remove('active'); ui.shop.classList.remove('open');
@@ -129,41 +145,28 @@
     const choiceCount = level >= 5 ? 4 : 3;
     targets = [];
     for (let i = 0; i < choiceCount; i++) {
-      let x, y;
-      for (let attempt = 0; attempt < 14; attempt++) {
-        x = margin + random() * (W - margin * 2);
-        y = current.y - gapY * (.58 + random() * 1.02);
-        if (targets.every(other => Math.hypot(x - other.x, y - other.y) > 96)) break;
-      }
       const r = Math.max(20, 32 - level * .22 + random() * 9);
-      const next = planet(x, y, r, palette[(level + i * 2) % palette.length], level * 37 + i * 11);
+      const pos = findFreePosition(r, current.y - gapY * 1.62, current.y - gapY * .56, 34, margin, W - margin);
+      const next = planet(pos.x, pos.y, r, palette[(level + i * 2) % palette.length], level * 37 + i * 11);
       next.target = true; planets.push(next); targets.push(next);
     }
     const collectibleTarget = targets[Math.floor(random() * targets.length)];
     const collectibleT = .38 + random() * .24;
     const routeX = current.x + (collectibleTarget.x - current.x) * collectibleT;
     const routeY = current.y + (collectibleTarget.y - current.y) * collectibleT;
-    collectibles.push({ x: routeX + (random() - .5) * 54, y: routeY, r: 7, pulse: random() * TAU, collected: false });
+    const collectiblePos = findFreePosition(7, routeY - 38, routeY + 38, 16, routeX - 62, routeX + 62);
+    collectibles.push({ x: collectiblePos.x, y: collectiblePos.y, r: 7, pulse: random() * TAU, collected: false });
     const blackHoleCount = level < 3 ? 0 : Math.min(4, 2 + Math.floor((level - 3) / 5));
     for (let i = 0; i < blackHoleCount; i++) {
       if (level > 3 && random() < .22) continue;
-      let ox, oy;
-      for (let attempt = 0; attempt < 8; attempt++) {
-        ox = W * (.13 + random() * .74);
-        oy = current.y - gapY * (.28 + random() * .48);
-        if (Math.hypot(ox - current.x, oy - current.y) > 82 && targets.every(t => Math.hypot(ox - t.x, oy - t.y) > 76)) break;
-      }
-      const hole = { ...planet(ox, oy, 13 + random() * 7, '#9b63ff', 100 + level * 7 + i), hazard: true, hazardType: 'blackHole', gravity: 470000 + level * 9000 };
+      const r = 13 + random() * 7, pos = findFreePosition(r, current.y - gapY * 1.18, current.y - gapY * .24, 30);
+      const hole = { ...planet(pos.x, pos.y, r, '#9b63ff', 100 + level * 7 + i), hazard: true, hazardType: 'blackHole', gravity: 470000 + level * 9000 };
       planets.push(hole);
     }
     const pulsarCount = level < 4 ? 0 : Math.min(2, 1 + Math.floor((level - 4) / 7));
     for (let i = 0; i < pulsarCount; i++) {
-      let px, py;
-      for (let attempt = 0; attempt < 10; attempt++) {
-        px = margin + random() * (W - margin * 2); py = current.y - gapY * (.3 + random() * .62);
-        if (Math.hypot(px - current.x, py - current.y) > 90 && targets.every(t => Math.hypot(px - t.x, py - t.y) > 82)) break;
-      }
-      planets.push({ ...planet(px, py, 11 + random() * 5, '#6ee7ff', 600 + level * 9 + i), hazard: true, hazardType: 'pulsar', gravity: -(300000 + level * 7000) });
+      const r = 11 + random() * 5, pos = findFreePosition(r, current.y - gapY * 1.24, current.y - gapY * .28, 30);
+      planets.push({ ...planet(pos.x, pos.y, r, '#6ee7ff', 600 + level * 9 + i), hazard: true, hazardType: 'pulsar', gravity: -(300000 + level * 7000) });
     }
     const asteroidCount = level < 4 ? 0 : Math.min(5, 1 + Math.floor((level - 4) / 4));
     for (let i = 0; i < asteroidCount; i++) {
@@ -171,35 +174,48 @@
       const routeTarget = targets[i % targets.length];
       const bx = current.x + (routeTarget.x - current.x) * t;
       const by = current.y + (routeTarget.y - current.y) * t;
-      const asteroid = { x: bx + (random() - .5) * W * .38, y: by + (random() - .5) * 44, r: 7 + random() * 6, rotation: random() * TAU, spin: (random() - .5) * 1.4, seed: random() * 20 };
-      if (Math.hypot(asteroid.x - current.x, asteroid.y - current.y) > 70 && targets.every(target => Math.hypot(asteroid.x - target.x, asteroid.y - target.y) > 65)) asteroids.push(asteroid);
+      const r = 7 + random() * 6, pos = findFreePosition(r, by - 52, by + 52, 18, bx - W * .2, bx + W * .2);
+      asteroids.push({ x: pos.x, y: pos.y, r, rotation: random() * TAU, spin: (random() - .5) * 1.4, seed: random() * 20 });
     }
     if (level === 3) toast('ANOMALIA: buracos negros alteram a rota.');
     if (level === 4) toast('CUIDADO: pulsares e asteroides à frente.');
   }
 
   function placeOrbitShip() {
-    ship.x = current.x + Math.cos(ship.angle) * ship.orbitRadius;
-    ship.y = current.y + Math.sin(ship.angle) * ship.orbitRadius;
+    ship.x = current.x;
+    ship.y = current.y - ship.orbitRadius;
   }
 
   function press(e) {
     if (state !== 'playing' || ship.mode !== 'orbit' || ui.shop.classList.contains('open')) return;
     if (e?.cancelable) e.preventDefault();
-    holding = true; charge = Math.max(.18, charge);
+    const rect = canvas.getBoundingClientRect();
+    holding = true; charge = .25; ship.aimAngle = -Math.PI / 2;
+    if (Number.isFinite(e?.pointerId)) canvas.setPointerCapture?.(e.pointerId);
+    aimStartX = Number.isFinite(e?.clientX) ? e.clientX - rect.left : ship.x;
+    aimStartY = Number.isFinite(e?.clientY) ? e.clientY - rect.top : ship.y - cameraY;
     ping(230, .025, 'sine');
+  }
+  function aim(e) {
+    if (!holding || state !== 'playing' || ship.mode !== 'orbit') return;
+    if (e?.cancelable) e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    const dx = x - aimStartX, dy = y - aimStartY, distance = Math.hypot(dx, dy);
+    if (distance > 7) ship.aimAngle = Math.atan2(dy, dx);
+    charge = Math.max(.2, Math.min(1, distance / Math.min(190, W * .42)));
   }
   function release(e) {
     if (!holding || state !== 'playing' || ship.mode !== 'orbit') return;
     if (e?.cancelable) e.preventDefault();
     holding = false;
-    const tangent = ship.angle + Math.PI / 2 * ship.dir;
-    const outward = ship.angle;
+    if (Number.isFinite(e?.pointerId) && canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture?.(e.pointerId);
+    const tangent = ship.aimAngle;
     const boost = save.boosters > 0 ? 1.15 : 1;
     const speed = (255 + charge * 290) * boost;
     if (save.boosters > 0) { save.boosters -= 1; persist(); toast('IMPULSO +15% ATIVADO'); }
-    ship.vx = Math.cos(tangent) * speed + Math.cos(outward) * 68;
-    ship.vy = Math.sin(tangent) * speed + Math.sin(outward) * 68;
+    ship.vx = Math.cos(tangent) * speed;
+    ship.vy = Math.sin(tangent) * speed;
     ship.mode = 'flight'; trail = [];
     burst(ship.x, ship.y, skinColor(), 9, 100);
     ping(520, .07, 'triangle');
@@ -221,12 +237,6 @@
     collectibles.forEach(c => c.pulse += dt * 3);
     updateParticles(dt);
     if (ship.mode === 'orbit') {
-      if (!holding) ship.angle += ship.orbitSpeed * dt * ship.dir;
-      else {
-        charge += chargeDir * dt * .78;
-        if (charge >= 1) { charge = 1; chargeDir = -1; }
-        if (charge <= .18) { charge = .18; chargeDir = 1; }
-      }
       placeOrbitShip();
     } else if (ship.mode === 'flight') {
       let ax = 0, ay = 0;
@@ -282,10 +292,8 @@
     ui.sector.textContent = `SETOR ${String(score + 1).padStart(2, '0')}`;
     p.target = false; p.visited = true; current = p;
     ship.mode = 'orbit'; ship.orbitRadius = current.r + 19;
-    ship.angle = Math.atan2(ship.y - p.y, ship.x - p.x);
-    ship.dir = (ship.vx * -(ship.y - p.y) + ship.vy * (ship.x - p.x)) >= 0 ? 1 : -1;
-    ship.orbitSpeed = Math.min(2.25, 1.45 + score * .025);
-    charge = .18; chargeDir = 1;
+    ship.aimAngle = -Math.PI / 2;
+    charge = .35;
     cameraTargetY = current.y - H * .66;
     burst(p.x, p.y, p.color, centerHit ? 24 : 14, 155);
     ping(700 + Math.min(score, 12) * 28, .1, 'sine');
@@ -299,7 +307,7 @@
   function lose() {
     if (state !== 'playing') return;
     if (save.shields > 0) {
-      save.shields -= 1; persist(); holding = false; ship.mode = 'orbit'; ship.vx = ship.vy = 0; ship.angle = -Math.PI / 2; placeOrbitShip();
+      save.shields -= 1; persist(); holding = false; ship.mode = 'orbit'; ship.vx = ship.vy = 0; ship.aimAngle = -Math.PI / 2; placeOrbitShip();
       burst(current.x, current.y, '#6ee7ff', 26, 150); ping(820, .12, 'sine'); toast('ESCUDO DE EMERGÊNCIA ATIVADO'); return;
     }
     state = 'over'; holding = false; save.runs += 1; persist();
@@ -320,7 +328,7 @@
     ui.continueButton.disabled = false;
     if (!ok) return toast('O anúncio não ficou disponível.');
     continued = true; ui.over.classList.remove('active'); state = 'playing';
-    ship.mode = 'orbit'; ship.angle = -Math.PI / 2; ship.vx = ship.vy = 0; placeOrbitShip();
+    ship.mode = 'orbit'; ship.aimAngle = -Math.PI / 2; ship.vx = ship.vy = 0; placeOrbitShip();
     toast('Sinal recuperado!'); ping(620, .12, 'sine');
   }
 
@@ -422,7 +430,7 @@
     if (!p.hazard) {
       ctx.globalAlpha = .18; ctx.fillStyle = '#fff';
       for (let i = 0; i < 3; i++) {
-        const a = ((p.seed * .17 + i * 2.1) % TAU), rr = p.r * (.12 + (i % 2) * .08);
+        const a = ((p.seed * .17 + i * 2.1 + p.pulse * .22) % TAU), rr = p.r * (.12 + (i % 2) * .08);
         ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * p.r * .45, p.y + Math.sin(a) * p.r * .4, rr, 0, TAU); ctx.fill();
       }
     } else if (p.hazardType === 'pulsar') {
@@ -481,19 +489,19 @@
       }
       ctx.restore();
     }
-    const angle = ship.mode === 'flight' ? Math.atan2(ship.vy, ship.vx) + Math.PI / 2 : ship.angle + Math.PI / 2 * ship.dir;
+    const angle = ship.mode === 'flight' ? Math.atan2(ship.vy, ship.vx) + Math.PI / 2 : ship.aimAngle + Math.PI / 2;
     ctx.save(); ctx.translate(ship.x, ship.y); ctx.rotate(angle); ctx.shadowColor = skinColor(); ctx.shadowBlur = 14; ctx.fillStyle = skinColor();
     ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(7, 8); ctx.lineTo(2, 6); ctx.lineTo(0, 12); ctx.lineTo(-2, 6); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill();
     ctx.shadowBlur = 0; ctx.fillStyle = '#151933'; ctx.beginPath(); ctx.arc(0, -2, 2.8, 0, TAU); ctx.fill();
     ctx.restore();
-    if (ship.mode === 'orbit') drawPrediction();
+    if (ship.mode === 'orbit' && holding) drawPrediction();
   }
 
   function drawPrediction() {
-    const tangent = ship.angle + Math.PI / 2 * ship.dir, outward = ship.angle;
-    const previewCharge = holding ? charge : .54;
+    const tangent = ship.aimAngle;
+    const previewCharge = charge;
     const speed = (255 + previewCharge * 290) * (save.boosters > 0 ? 1.15 : 1);
-    let x = ship.x, y = ship.y, vx = Math.cos(tangent) * speed + Math.cos(outward) * 68, vy = Math.sin(tangent) * speed + Math.sin(outward) * 68;
+    let x = ship.x, y = ship.y, vx = Math.cos(tangent) * speed, vy = Math.sin(tangent) * speed;
     const points = []; let outcome = 'open';
     for (let i = 0; i < 46; i++) {
       const step = .034; let ax = 0, ay = 0;
@@ -633,13 +641,13 @@
       if (product === 'dust_500') save.coins += 500;
       if (product === 'starter_pack') save.coins += 1500;
       if (product === 'dust_5000') save.coins += 5000;
-      if (product === 'nova_ship' && !save.owned.includes('nova')) { save.owned.push('nova'); save.selected = 'nova'; }
       if (product === 'remove_ads') { save.noAds = true; ui.ad.classList.remove('visible'); }
       persist(); renderShop();
     } else toast('Compra simulada — pronta para conectar à loja.');
   }));
 
   canvas.addEventListener('pointerdown', press);
+  canvas.addEventListener('pointermove', aim);
   window.addEventListener('pointerup', release);
   window.addEventListener('pointercancel', release);
   window.addEventListener('resize', resize);

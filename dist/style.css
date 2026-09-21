@@ -80,6 +80,7 @@ h2 { margin: 0 0 12px; font-size: 2.4rem; letter-spacing: -.05em; }
 .trail-card small, .item-card small { margin-top: 5px; color: var(--muted); font-size: .67rem; }
 .item-card span { color: var(--gold); font-size: .63rem; font-weight: 900; }
 .store-actions { max-width: 520px; margin: 20px auto 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.single-product { grid-template-columns: 1fr; margin-top: 0; }
 .store-card { min-height: 100px; padding: 12px; border: 1px solid #7c5cff66; border-radius: 18px; background: linear-gradient(145deg, #27205a, #121635); text-align: left; cursor: pointer; }
 .store-card span, .store-card b, .store-card small { display: block; }
 .store-card span { color: var(--gold); font-size: .6rem; font-weight: 900; letter-spacing: .08em; }
