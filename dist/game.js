@@ -39,7 +39,7 @@
     { id: 'void', name: 'Vácuo', color: '#9b63ff', cost: 1800 },
     { id: 'aurora', name: 'Aurora', color: '#70f0aa', cost: 2600 }
   ];
-  const defaults = { best: 0, coins: 0, selected: 'cometa', owned: ['cometa'], selectedTrail: 'classic', ownedTrails: ['classic'], shields: 0, boosters: 0, sound: true, runs: 0, noAds: false };
+  const defaults = { best: 0, coins: 0, selected: 'cometa', owned: ['cometa'], selectedTrail: 'classic', ownedTrails: ['classic'], shields: 0, boosters: 0, sound: true, runs: 0 };
   let save = loadSave();
   let W = 0, H = 0, dpr = 1, last = 0, state = 'menu';
   let stars = [], nebulae = [], comets = [], planets = [], particles = [], trail = [], asteroids = [], collectibles = [], phenomena = [];
@@ -47,10 +47,6 @@
   let holding = false, charge = .35, aimStartX = 0, aimStartY = 0, continued = false, runDust = 0;
   let runSeed = 0, random = Math.random;
   let audioCtx = null, musicTimer = null, musicStep = 0;
-
-  window.OrbitaMonetization = window.OrbitaMonetization || {
-    purchase: async product => ({ success: false, product, demo: true })
-  };
 
   function loadSave() {
     try { return { ...defaults, ...JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') }; }
@@ -410,7 +406,7 @@
       ui.continueButton.style.display = continued ? 'none' : 'flex';
       ui.over.classList.add('active');
     }, 420);
-    if (!save.noAds && save.runs % 4 === 0) {
+    if (save.runs % 2 === 0) {
       window.OrbitaAds.showInterstitial('game-over').catch(() => {});
     }
   }
@@ -823,7 +819,7 @@
       button.addEventListener('click', () => {
         if (save.coins < item.cost) return toast(`Faltam ${item.cost - save.coins} de poeira estelar.`);
         save.coins -= item.cost; if (item.id === 'shield') save.shields += 1; else save.boosters += 1;
-        persist(); renderItems(); toast(`${item.name} comprado.`);
+        persist(); renderItems(); toast(`${item.name} adquirido.`);
       });
       ui.items.appendChild(button);
     });
@@ -832,6 +828,17 @@
   function renderShop() { renderSkins(); renderTrails(); renderItems(); }
   function openShop() { renderShop(); ui.shop.classList.add('open'); ui.shopCoins.textContent = save.coins; }
   function closeShop() { ui.shop.classList.remove('open'); }
+
+  window.OrbitaHandleBack = () => {
+    if (ui.shop.classList.contains('open')) { closeShop(); return true; }
+    if (!ui.quitConfirm.hidden) { cancelQuit(); return true; }
+    if (ui.over.classList.contains('active')) {
+      state = 'menu'; cameraY = cameraTargetY = 0; stopMusic(); ui.quitButton.hidden = true;
+      ui.over.classList.remove('active'); ui.start.classList.add('active'); seedMenuWorld(); return true;
+    }
+    if (state === 'playing') { openQuitConfirm(); return true; }
+    return false;
+  };
 
   document.querySelector('#play-button').addEventListener('click', begin);
   document.querySelector('#retry-button').addEventListener('click', restart);
@@ -846,30 +853,35 @@
   ui.quitButton.addEventListener('click', openQuitConfirm);
   document.querySelector('#cancel-quit').addEventListener('click', cancelQuit);
   document.querySelector('#confirm-quit').addEventListener('click', confirmQuit);
+  const privacyButton = document.querySelector('#privacy-options');
+  const nativePrivacy = window.OrbitaNativePrivacy;
+  const updatePrivacyButton = required => { privacyButton.hidden = !required; };
+  if (nativePrivacy?.isPrivacyOptionsRequired) {
+    try { updatePrivacyButton(nativePrivacy.isPrivacyOptionsRequired()); } catch {}
+  }
+  window.addEventListener('orbita-privacy-ready', e => updatePrivacyButton(Boolean(e.detail?.required)));
+  privacyButton.addEventListener('click', () => {
+    if (nativePrivacy?.openPrivacyOptions) nativePrivacy.openPrivacyOptions();
+  });
   ui.rewardDust.addEventListener('click', async () => {
     ui.rewardDust.disabled = true;
-    const ad = await window.OrbitaAds.showRewarded('dust-75');
+    const ad = await window.OrbitaAds.showRewarded('dust-150');
     ui.rewardDust.disabled = false;
-    if (!ad.rewarded) return toast(ad.unavailable ? 'Recompensa disponível no app Android.' : 'Assista até o fim para receber ✦ 75.');
-    save.coins += 75; persist(); renderShop(); toast('+75 POEIRA ESTELAR');
+    if (!ad.rewarded) return toast(ad.unavailable ? 'Recompensa disponível no app Android.' : 'Assista até o fim para receber ✦ 150.');
+    save.coins += 150; persist(); renderShop(); toast('+150 POEIRA ESTELAR');
   });
-  document.querySelectorAll('[data-product]').forEach(b => b.addEventListener('click', async () => {
-    const product = b.dataset.product, result = await window.OrbitaMonetization.purchase(product);
-    if (result.success) {
-      if (product === 'dust_500') save.coins += 500;
-      if (product === 'starter_pack') save.coins += 1500;
-      if (product === 'dust_5000') save.coins += 5000;
-      if (product === 'remove_ads') save.noAds = true;
-      persist(); renderShop();
-    } else toast('Compra simulada — pronta para conectar à loja.');
-  }));
 
   canvas.addEventListener('pointerdown', press);
   canvas.addEventListener('pointermove', aim);
   window.addEventListener('pointerup', release);
   window.addEventListener('pointercancel', release);
   window.addEventListener('resize', resize);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) holding = false; });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { holding = false; stopMusic(); }
+    else if (state === 'playing') startMusic();
+  });
+  window.addEventListener('orbita-app-pause', () => { holding = false; stopMusic(); });
+  window.addEventListener('orbita-app-resume', () => { if (state === 'playing') startMusic(); });
   window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); if (e.repeat) return; press(e); } });
   window.addEventListener('keyup', e => { if (e.code === 'Space') release(e); });
 
