@@ -2,9 +2,13 @@
 
 Protótipo mobile-first de jogo casual infinito feito em Canvas 2D.
 
+## Jogar
+
+**[Abrir Órbita Infinita](https://pedrh77.github.io/OrbitaInfinita/)**
+
 ## Como jogar
 
-Abra `dist/index.html` por um servidor local. Segure a tela para carregar o impulso e solte para lançar a nave ao próximo planeta.
+Arraste a partir da nave para escolher direção e força. Solte para lançar e tente alcançar um novo planeta.
 
 ## Integrações preparadas
 
