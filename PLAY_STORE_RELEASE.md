@@ -53,6 +53,7 @@ jarsigner -verify -verbose -certs app/build/outputs/bundle/release/app-release.a
 
 ## 5. Declarações da Play Console
 
+- Enviar as artes de `store-assets/` seguindo a ordem e os textos alternativos descritos em `store-assets/README.md`.
 - Marcar que o aplicativo contém anúncios.
 - Informar a política: `https://pedrh77.github.io/OrbitaInfinita/privacy.html`.
 - Preencher Segurança dos dados considerando Google Mobile Ads e UMP.
