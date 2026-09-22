@@ -27,6 +27,7 @@
     </header>
 
     <div id="combo" class="combo" aria-hidden="true">PERFEITO ×2</div>
+    <button id="quit-button" class="quit-button" hidden>DESISTIR</button>
     <section id="start-screen" class="screen active">
       <div class="logo-planet" aria-hidden="true"><span></span></div>
       <p class="eyebrow">NEBULOSAS · COMETAS · MUNDOS SEM FIM</p>
@@ -47,6 +48,16 @@
       <button id="continue-button" class="reward"><span class="play-icon">▶</span><span><b>CONTINUAR</b><small>assista a um anúncio</small></span></button>
       <button id="retry-button" class="primary">TENTAR DE NOVO</button>
       <button id="home-button" class="text-button">VOLTAR AO INÍCIO</button>
+    </section>
+
+    <section id="quit-confirm" class="screen compact confirm-screen" aria-labelledby="quit-title" hidden>
+      <div class="confirm-card">
+        <p class="eyebrow">ENCERRAR VIAGEM</p>
+        <h2 id="quit-title">Desistir da partida?</h2>
+        <p id="quit-copy">Você perderá 30% da poeira conquistada nesta rodada.</p>
+        <button id="confirm-quit" class="danger-button">DESISTIR E PERDER 30%</button>
+        <button id="cancel-quit" class="text-button">CONTINUAR JOGANDO</button>
+      </div>
     </section>
 
     <section id="shop" class="panel" aria-labelledby="shop-title">

@@ -12,7 +12,9 @@
     toast: document.querySelector('#toast'),
     continueButton: document.querySelector('#continue-button'), skins: document.querySelector('#skins'),
     trails: document.querySelector('#trails'), items: document.querySelector('#items'),
-    sector: document.querySelector('#sector'), rewardDust: document.querySelector('#reward-dust')
+    sector: document.querySelector('#sector'), rewardDust: document.querySelector('#reward-dust'),
+    quitButton: document.querySelector('#quit-button'), quitConfirm: document.querySelector('#quit-confirm'),
+    quitCopy: document.querySelector('#quit-copy')
   };
 
   const TAU = Math.PI * 2;
@@ -40,11 +42,11 @@
   const defaults = { best: 0, coins: 0, selected: 'cometa', owned: ['cometa'], selectedTrail: 'classic', ownedTrails: ['classic'], shields: 0, boosters: 0, sound: true, runs: 0, noAds: false };
   let save = loadSave();
   let W = 0, H = 0, dpr = 1, last = 0, state = 'menu';
-  let stars = [], nebulae = [], comets = [], planets = [], particles = [], trail = [], asteroids = [], collectibles = [];
+  let stars = [], nebulae = [], comets = [], planets = [], particles = [], trail = [], asteroids = [], collectibles = [], phenomena = [];
   let ship, current, targets = [], score = 0, streak = 0, cameraY = 0, cameraTargetY = 0;
-  let holding = false, charge = .35, aimStartX = 0, aimStartY = 0, continued = false;
+  let holding = false, charge = .35, aimStartX = 0, aimStartY = 0, continued = false, runDust = 0;
   let runSeed = 0, random = Math.random;
-  let audioCtx = null;
+  let audioCtx = null, musicTimer = null, musicStep = 0;
 
   window.OrbitaMonetization = window.OrbitaMonetization || {
     purchase: async product => ({ success: false, product, demo: true })
@@ -112,6 +114,7 @@
       }
       for (const a of asteroids) clearance = Math.min(clearance, Math.hypot(candidate.x - a.x, candidate.y - a.y) - r - a.r);
       for (const c of collectibles) if (!c.collected) clearance = Math.min(clearance, Math.hypot(candidate.x - c.x, candidate.y - c.y) - r - c.r);
+      for (const f of phenomena) if (!f.used) clearance = Math.min(clearance, Math.hypot(candidate.x - f.x, candidate.y - f.y) - r - f.r);
       if (clearance > bestClearance) { best = candidate; bestClearance = clearance; }
       if (clearance >= padding) return candidate;
     }
@@ -126,8 +129,8 @@
   }
 
   function begin() {
-    score = 0; streak = 0; continued = false; holding = false; charge = .35;
-    cameraY = 0; cameraTargetY = 0; trail = []; particles = []; asteroids = []; collectibles = [];
+    score = 0; streak = 0; continued = false; holding = false; charge = .35; runDust = 0;
+    cameraY = 0; cameraTargetY = 0; trail = []; particles = []; asteroids = []; collectibles = []; phenomena = [];
     runSeed = Math.floor(Math.random() * 900000) + 100000;
     random = mulberry32(runSeed);
     current = planet(W * .5, H * .72, 39, '#7c5cff', 10);
@@ -138,9 +141,11 @@
     placeOrbitShip();
     state = 'playing';
     ui.start.classList.remove('active'); ui.over.classList.remove('active'); ui.shop.classList.remove('open');
+    ui.quitConfirm.hidden = true; ui.quitButton.hidden = false;
     ui.score.textContent = '0';
     ui.sector.textContent = 'SETOR 01';
     ping(380, .06, 'sine');
+    startMusic();
   }
 
   function spawnTargets() {
@@ -172,6 +177,27 @@
     const routeY = current.y + (collectibleTarget.y - current.y) * collectibleT;
     const collectiblePos = findFreePosition(7, routeY - 38, routeY + 38, 16, routeX - 62, routeX + 62);
     collectibles.push({ x: collectiblePos.x, y: collectiblePos.y, r: 7, pulse: random() * TAU, collected: false });
+    if (level >= 2 && random() < .5) {
+      const pos = findFreePosition(10, current.y - gapY * 1.18, current.y - gapY * .24, 24);
+      phenomena.push({ type: 'shieldOrb', x: pos.x, y: pos.y, r: 10, pulse: random() * TAU, used: false });
+    }
+    if (level >= 3 && random() < .65) {
+      const pos = findFreePosition(17, current.y - gapY * 1.2, current.y - gapY * .26, 26);
+      phenomena.push({ type: 'boostGate', x: pos.x, y: pos.y, r: 17, pulse: random() * TAU, used: false });
+    }
+    if (level >= 4) {
+      const mineCount = Math.min(2, 1 + Math.floor((level - 4) / 14));
+      for (let i = 0; i < mineCount; i++) {
+        if (random() < .28) continue;
+        const pos = findFreePosition(9, current.y - gapY * 1.18, current.y - gapY * .24, 24);
+        phenomena.push({ type: 'mine', x: pos.x, y: pos.y, r: 9, pulse: random() * TAU, used: false });
+      }
+    }
+    if (level >= 5 && random() < .46) {
+      const r = 34 + random() * 13;
+      const pos = findFreePosition(r, current.y - gapY * 1.2, current.y - gapY * .3, 18);
+      phenomena.push({ type: 'nebula', x: pos.x, y: pos.y, r, pulse: random() * TAU, used: false });
+    }
     const blackHoleCount = level < 3 ? 0 : Math.min(4, 2 + Math.floor((level - 3) / 5));
     for (let i = 0; i < blackHoleCount; i++) {
       if (level > 3 && random() < .22) continue;
@@ -197,13 +223,16 @@
       const corridor = 30;
       planets = planets.filter(p => p === current || p.target || distanceToSegment(p.x, p.y, current.x, current.y, safeTarget.x, safeTarget.y) > corridor + p.r);
       asteroids = asteroids.filter(a => distanceToSegment(a.x, a.y, current.x, current.y, safeTarget.x, safeTarget.y) > corridor + a.r);
+      phenomena = phenomena.filter(f => f.type !== 'mine' || distanceToSegment(f.x, f.y, current.x, current.y, safeTarget.x, safeTarget.y) > corridor + f.r);
     }
     const normalPlanets = planets.filter(p => !p.hazard);
     const visibleHazards = planets.filter(p => p.hazard).slice(-Math.min(6, 3 + Math.floor(level / 10)));
     planets = [...normalPlanets, ...visibleHazards];
     asteroids = asteroids.slice(-Math.min(6, 2 + Math.floor(level / 8)));
+    phenomena = phenomena.filter(f => !f.used && f.y - cameraTargetY > -180 && f.y - cameraTargetY < H + 180).slice(-8);
     if (level === 3) toast('ANOMALIA: buracos negros alteram a rota.');
     if (level === 4) toast('CUIDADO: pulsares e asteroides à frente.');
+    if (level === 5) toast('NOVO: portais de impulso, escudos, minas e nebulosas.');
   }
 
   function placeOrbitShip() {
@@ -279,6 +308,7 @@
     planets.forEach(p => { if (p !== current) movePlanetOnOrbit(p, worldDt); });
     asteroids.forEach(a => a.rotation += a.spin * worldDt);
     collectibles.forEach(c => c.pulse += worldDt * 3);
+    phenomena.forEach(f => f.pulse += worldDt * (f.type === 'mine' ? 3.2 : 1.8));
     updateParticles(worldDt);
     if (ship.mode === 'orbit') {
       placeOrbitShip();
@@ -295,6 +325,10 @@
         }
       }
       ship.vx += ax * dt; ship.vy += ay * dt;
+      for (const f of phenomena) if (!f.used && f.type === 'nebula' && Math.hypot(ship.x - f.x, ship.y - f.y) < f.r) {
+        const drag = Math.max(.985, 1 - dt * .65);
+        ship.vx *= drag; ship.vy *= drag;
+      }
       ship.x += ship.vx * dt; ship.y += ship.vy * dt;
       trail.push({ x: ship.x, y: ship.y, life: 1 });
       if (trail.length > 34) trail.shift();
@@ -321,7 +355,18 @@
     }
     for (const c of collectibles) {
       if (!c.collected && Math.hypot(ship.x - c.x, ship.y - c.y) < c.r + 11) {
-        c.collected = true; save.coins += 15; persist(); burst(c.x, c.y, '#ffcf5c', 18, 120); ping(980, .08, 'sine'); toast('+15 POEIRA ESTELAR');
+        c.collected = true; save.coins += 15; runDust += 15; persist(); burst(c.x, c.y, '#ffcf5c', 18, 120); ping(980, .08, 'sine'); toast('+15 POEIRA ESTELAR');
+      }
+    }
+    for (const f of phenomena) {
+      if (f.used || f.type === 'nebula') continue;
+      if (Math.hypot(ship.x - f.x, ship.y - f.y) >= f.r + 8) continue;
+      if (f.type === 'mine') { lose(); return; }
+      f.used = true;
+      if (f.type === 'shieldOrb') {
+        save.shields += 1; persist(); burst(f.x, f.y, '#6ee7ff', 22, 145); ping(1120, .1, 'sine'); toast('ESCUDO ENCONTRADO');
+      } else if (f.type === 'boostGate') {
+        ship.vx *= 1.18; ship.vy *= 1.18; save.coins += 8; runDust += 8; persist(); burst(f.x, f.y, '#ffcf5c', 20, 160); ping(760, .08, 'triangle'); toast('PORTAL DE IMPULSO · +8 POEIRA');
       }
     }
   }
@@ -331,7 +376,7 @@
     const centerHit = speed < 480;
     score += 1; streak = centerHit ? streak + 1 : 0;
     const reward = 3 + Math.min(12, streak * 2);
-    save.coins += reward; save.best = Math.max(save.best, score); persist();
+    save.coins += reward; runDust += reward; save.best = Math.max(save.best, score); persist();
     ui.score.textContent = score;
     ui.sector.textContent = `SETOR ${String(score + 1).padStart(2, '0')}`;
     p.target = false; p.visited = true; p.orbitMotion = null; current = p;
@@ -345,6 +390,7 @@
     planets = planets.filter(q => q === current || (!q.target && q.y - cameraTargetY > -180 && q.y - cameraTargetY < H + 180));
     asteroids = asteroids.filter(a => a.y - cameraTargetY > -180 && a.y - cameraTargetY < H + 180);
     collectibles = collectibles.filter(c => !c.collected && c.y - cameraTargetY > -180 && c.y - cameraTargetY < H + 180);
+    phenomena = phenomena.filter(f => !f.used && f.y - cameraTargetY > -180 && f.y - cameraTargetY < H + 180);
     spawnTargets();
   }
 
@@ -355,6 +401,7 @@
       burst(current.x, current.y, '#6ee7ff', 26, 150); ping(820, .12, 'sine'); toast('ESCUDO DE EMERGÊNCIA ATIVADO'); return;
     }
     state = 'over'; holding = false; save.runs += 1; persist();
+    ui.quitButton.hidden = true; ui.quitConfirm.hidden = true; stopMusic();
     burst(ship.x, ship.y, skinColor(), 30, 210);
     ping(110, .22, 'sawtooth');
     setTimeout(() => {
@@ -374,11 +421,37 @@
     ui.continueButton.disabled = false;
     if (!ad.rewarded) return toast(ad.unavailable ? 'Recompensa disponível no app Android.' : 'Assista até o fim para receber a recompensa.');
     continued = true; ui.over.classList.remove('active'); state = 'playing';
+    ui.quitButton.hidden = false; startMusic();
     ship.mode = 'orbit'; ship.aimAngle = -Math.PI / 2; ship.vx = ship.vy = 0; placeOrbitShip();
     toast('Sinal recuperado!'); ping(620, .12, 'sine');
   }
 
   function restart() { begin(); }
+
+  function openQuitConfirm() {
+    if (state !== 'playing') return;
+    holding = false; state = 'paused'; stopMusic();
+    const penalty = Math.floor(runDust * .3);
+    ui.quitCopy.textContent = penalty > 0
+      ? `Você conquistou ✦ ${runDust} nesta rodada e perderá ✦ ${penalty}.`
+      : 'Você ainda não conquistou poeira nesta rodada.';
+    ui.quitConfirm.hidden = false;
+  }
+
+  function cancelQuit() {
+    if (state !== 'paused') return;
+    ui.quitConfirm.hidden = true; state = 'playing'; startMusic();
+  }
+
+  function confirmQuit() {
+    if (state !== 'paused') return;
+    const penalty = Math.min(save.coins, Math.floor(runDust * .3));
+    save.coins -= penalty; save.best = Math.max(save.best, score); save.runs += 1; persist();
+    state = 'over'; continued = true; ui.quitConfirm.hidden = true; ui.quitButton.hidden = true; stopMusic();
+    ui.final.textContent = score;
+    ui.result.textContent = penalty ? `Viagem encerrada. Você perdeu ✦ ${penalty}.` : 'Viagem encerrada sem perda de poeira.';
+    ui.continueButton.style.display = 'none'; ui.over.classList.add('active');
+  }
 
   function burst(x, y, color, count, speed) {
     for (let i = 0; i < count; i++) {
@@ -410,9 +483,11 @@
     drawComets();
     ctx.save();
     ctx.translate(0, -cameraY);
+    phenomena.filter(f => f.type === 'nebula').forEach(drawPhenomenon);
     planets.forEach(drawPlanet);
     asteroids.forEach(drawAsteroid);
     collectibles.forEach(drawCollectible);
+    phenomena.filter(f => f.type !== 'nebula').forEach(drawPhenomenon);
     drawParticles();
     if ((state === 'playing' || state === 'over') && ship) drawShip();
     ctx.restore();
@@ -542,6 +617,35 @@
     ctx.closePath(); ctx.fill(); ctx.restore();
   }
 
+  function drawPhenomenon(f) {
+    if (f.used) return;
+    ctx.save(); ctx.translate(f.x, f.y);
+    if (f.type === 'nebula') {
+      const g = ctx.createRadialGradient(0, 0, 2, 0, 0, f.r);
+      g.addColorStop(0, '#7c5cff38'); g.addColorStop(.55, '#4a3fa925'); g.addColorStop(1, '#35206a00');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, f.r, 0, TAU); ctx.fill();
+      ctx.globalAlpha = .2; ctx.strokeStyle = '#b49cff'; ctx.setLineDash([3, 8]); ctx.beginPath(); ctx.arc(0, 0, f.r * .82, 0, TAU); ctx.stroke();
+    } else if (f.type === 'shieldOrb') {
+      const scale = 1 + Math.sin(f.pulse) * .08; ctx.scale(scale, scale);
+      ctx.shadowColor = '#6ee7ff'; ctx.shadowBlur = 18; ctx.fillStyle = '#6ee7ff35'; ctx.strokeStyle = '#9cf4ff'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + i * TAU / 6; i ? ctx.lineTo(Math.cos(a) * f.r, Math.sin(a) * f.r) : ctx.moveTo(Math.cos(a) * f.r, Math.sin(a) * f.r); }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, f.r * .38, 0, TAU); ctx.stroke();
+    } else if (f.type === 'boostGate') {
+      ctx.rotate(f.pulse * .35); ctx.shadowColor = '#ffcf5c'; ctx.shadowBlur = 16; ctx.strokeStyle = '#ffcf5c'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, f.r, -.3, Math.PI + .3); ctx.stroke();
+      ctx.globalAlpha = .45; ctx.beginPath(); ctx.arc(0, 0, f.r * .65, Math.PI - .3, TAU + .3); ctx.stroke();
+    } else if (f.type === 'mine') {
+      ctx.rotate(f.pulse * .18); ctx.shadowColor = '#ff4f91'; ctx.shadowBlur = 18; ctx.fillStyle = '#ff4f91'; ctx.strokeStyle = '#ff9fc1';
+      ctx.beginPath();
+      for (let i = 0; i < 16; i++) { const a = i * TAU / 16, r = i % 2 ? f.r * .55 : f.r * (1.25 + Math.sin(f.pulse) * .12); i ? ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, 2, 0, TAU); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function drawShip() {
     if (ship.mode === 'flight') {
       ctx.save();
@@ -564,7 +668,7 @@
     const previewCharge = charge;
     const speed = (255 + previewCharge * 290) * (save.boosters > 0 ? 1.15 : 1);
     let x = ship.x, y = ship.y, vx = Math.cos(tangent) * speed, vy = Math.sin(tangent) * speed;
-    const points = []; let outcome = 'open';
+    const points = [], previewBoosts = new Set(); let outcome = 'open';
     for (let i = 0; i < 92; i++) {
       const step = .017; let ax = 0, ay = 0;
       for (const p of planets) if (p !== current || p.hazard) {
@@ -573,7 +677,14 @@
         const planetGravity = 125000 * (.7 + p.r / 48), g = (p.hazard ? p.gravity : planetGravity) / d2;
         ax += dx / d * g; ay += dy / d * g;
       }
-      vx += ax * step; vy += ay * step; x += vx * step; y += vy * step; points.push({ x, y });
+      vx += ax * step; vy += ay * step;
+      for (const f of phenomena) if (!f.used && f.type === 'nebula' && Math.hypot(x - f.x, y - f.y) < f.r) {
+        const drag = Math.max(.985, 1 - step * .65); vx *= drag; vy *= drag;
+      }
+      x += vx * step; y += vy * step; points.push({ x, y });
+      for (const f of phenomena) if (!f.used && f.type === 'boostGate' && !previewBoosts.has(f) && Math.hypot(x - f.x, y - f.y) < f.r + 8) {
+        previewBoosts.add(f); vx *= 1.18; vy *= 1.18;
+      }
       for (const p of planets) {
         if (p === current) continue;
         const future = futurePlanetPosition(p, (i + 1) * step);
@@ -581,6 +692,9 @@
       }
       if (outcome === 'open') for (const a of asteroids) {
         if (Math.hypot(x - a.x, y - a.y) < a.r + 7) { outcome = 'danger'; break; }
+      }
+      if (outcome === 'open') for (const f of phenomena) {
+        if (!f.used && f.type === 'mine' && Math.hypot(x - f.x, y - f.y) < f.r + 8) { outcome = 'danger'; break; }
       }
       if (outcome !== 'open') break;
     }
@@ -626,15 +740,43 @@
     const n = parseInt(hex.slice(1), 16), r = Math.max(0, Math.min(255, (n >> 16) + amount)), g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amount)), b = Math.max(0, Math.min(255, (n & 255) + amount));
     return `rgb(${r},${g},${b})`;
   }
-  function ping(freq, duration, type) {
-    if (!save.sound) return;
+  function ensureAudio() {
     try {
       audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
-      const o = audioCtx.createOscillator(), gain = audioCtx.createGain();
-      o.type = type; o.frequency.value = freq; gain.gain.setValueAtTime(.055, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime + duration);
-      o.connect(gain).connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + duration);
+      if (audioCtx.state === 'suspended') audioCtx.resume();
     } catch {}
   }
+  function tone(freq, duration, type = 'sine', volume = .02, delay = 0) {
+    if (!save.sound) return;
+    try {
+      ensureAudio();
+      const startAt = audioCtx.currentTime + delay, o = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, startAt);
+      gain.gain.setValueAtTime(.0001, startAt); gain.gain.exponentialRampToValueAtTime(volume, startAt + .018); gain.gain.exponentialRampToValueAtTime(.0001, startAt + duration);
+      o.connect(gain).connect(audioCtx.destination); o.start(startAt); o.stop(startAt + duration + .02);
+    } catch {}
+  }
+  function ping(freq, duration, type) { tone(freq, duration, type, .055); }
+  function musicBeat() {
+    if (!save.sound || state !== 'playing') return;
+    const roots = [110, 123.47, 98, 130.81], root = roots[Math.floor(score / 6) % roots.length];
+    const scale = [1, 1.1892, 1.3348, 1.4983, 1.7818, 2];
+    const bpm = 68 + Math.min(72, score * 1.45), beatMs = 60000 / bpm;
+    if (musicStep % 4 === 0) tone(root, beatMs * .0034, 'sine', .012);
+    if (musicStep % 2 === 0) tone(root / 2, beatMs * .0015, 'triangle', .018);
+    if (score >= 4) tone(root * scale[(musicStep + Math.floor(score / 3)) % scale.length], beatMs * .0011, 'sine', .009);
+    if (score >= 10 && musicStep % 2) tone(root * 4, .035, 'square', .0045);
+    if (score >= 18 && musicStep % 4 === 2) tone(root * 1.4983, beatMs * .0022, 'triangle', .007);
+    if (score >= 30) tone(root * scale[(musicStep * 2 + 1) % scale.length] * 2, .06, 'sine', .005, beatMs * .00035);
+    musicStep = (musicStep + 1) % 32;
+    musicTimer = setTimeout(musicBeat, beatMs);
+  }
+  function startMusic() {
+    stopMusic(); musicStep = 0;
+    if (!save.sound || state !== 'playing') return;
+    ensureAudio(); musicTimer = setTimeout(musicBeat, 120);
+  }
+  function stopMusic() { clearTimeout(musicTimer); musicTimer = null; }
   function mulberry32(a) { return () => { let t = a += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
   function renderSkins() {
@@ -694,10 +836,16 @@
   document.querySelector('#play-button').addEventListener('click', begin);
   document.querySelector('#retry-button').addEventListener('click', restart);
   document.querySelector('#continue-button').addEventListener('click', continueRun);
-  document.querySelector('#home-button').addEventListener('click', () => { state = 'menu'; cameraY = cameraTargetY = 0; ui.over.classList.remove('active'); ui.start.classList.add('active'); seedMenuWorld(); });
+  document.querySelector('#home-button').addEventListener('click', () => { state = 'menu'; cameraY = cameraTargetY = 0; stopMusic(); ui.quitButton.hidden = true; ui.over.classList.remove('active'); ui.start.classList.add('active'); seedMenuWorld(); });
   document.querySelector('#shop-button').addEventListener('click', openShop);
   document.querySelector('#close-shop').addEventListener('click', closeShop);
-  document.querySelector('#sound-button').addEventListener('click', e => { save.sound = !save.sound; e.currentTarget.textContent = save.sound ? 'SOM LIGADO' : 'SOM DESLIGADO'; e.currentTarget.setAttribute('aria-pressed', save.sound); persist(); });
+  document.querySelector('#sound-button').addEventListener('click', e => {
+    save.sound = !save.sound; e.currentTarget.textContent = save.sound ? 'SOM LIGADO' : 'SOM DESLIGADO'; e.currentTarget.setAttribute('aria-pressed', save.sound); persist();
+    save.sound && state === 'playing' ? startMusic() : stopMusic();
+  });
+  ui.quitButton.addEventListener('click', openQuitConfirm);
+  document.querySelector('#cancel-quit').addEventListener('click', cancelQuit);
+  document.querySelector('#confirm-quit').addEventListener('click', confirmQuit);
   ui.rewardDust.addEventListener('click', async () => {
     ui.rewardDust.disabled = true;
     const ad = await window.OrbitaAds.showRewarded('dust-75');
