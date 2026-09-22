@@ -118,6 +118,13 @@
     return best;
   }
 
+  function distanceToSegment(px, py, ax, ay, bx, by) {
+    const abx = bx - ax, aby = by - ay;
+    const length2 = abx * abx + aby * aby;
+    const t = length2 ? Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / length2)) : 0;
+    return Math.hypot(px - (ax + abx * t), py - (ay + aby * t));
+  }
+
   function begin() {
     score = 0; streak = 0; continued = false; holding = false; charge = .35;
     cameraY = 0; cameraTargetY = 0; trail = []; particles = []; asteroids = []; collectibles = [];
@@ -144,17 +151,21 @@
     targets = [];
     for (let i = 0; i < choiceCount; i++) {
       const r = Math.max(20, 32 - level * .22 + random() * 9);
-      const orbitRadius = 18 + random() * 20;
+      const movesInOrbit = i % 2 === level % 2;
+      const orbitRadius = movesInOrbit ? 18 + random() * 20 : 0;
       const pos = findFreePosition(r + orbitRadius, current.y - gapY * 1.62, current.y - gapY * .56, 34, margin, W - margin);
       const next = planet(pos.x, pos.y, r, palette[(level + i * 2) % palette.length], level * 37 + i * 11);
-      next.orbitMotion = {
-        cx: pos.x, cy: pos.y, radius: orbitRadius,
-        angle: random() * TAU,
-        speed: (.42 + random() * .28) * (random() < .5 ? -1 : 1)
-      };
-      movePlanetOnOrbit(next, 0);
+      if (movesInOrbit) {
+        next.orbitMotion = {
+          cx: pos.x, cy: pos.y, radius: orbitRadius,
+          angle: random() * TAU,
+          speed: (.42 + random() * .28) * (random() < .5 ? -1 : 1)
+        };
+        movePlanetOnOrbit(next, 0);
+      }
       next.target = true; planets.push(next); targets.push(next);
     }
+    const safeTarget = targets.find(t => !t.orbitMotion) || targets[0];
     const collectibleTarget = targets[Math.floor(random() * targets.length)];
     const collectibleT = .38 + random() * .24;
     const routeX = current.x + (collectibleTarget.x - current.x) * collectibleT;
@@ -165,7 +176,7 @@
     for (let i = 0; i < blackHoleCount; i++) {
       if (level > 3 && random() < .22) continue;
       const r = 13 + random() * 7, pos = findFreePosition(r, current.y - gapY * 1.18, current.y - gapY * .24, 30);
-      const hole = { ...planet(pos.x, pos.y, r, '#9b63ff', 100 + level * 7 + i), hazard: true, hazardType: 'blackHole', gravity: 470000 + level * 9000 };
+      const hole = { ...planet(pos.x, pos.y, r, '#9b63ff', 100 + level * 7 + i), hazard: true, hazardType: 'blackHole', gravity: 0 };
       planets.push(hole);
     }
     const pulsarCount = level < 4 ? 0 : Math.min(2, 1 + Math.floor((level - 4) / 7));
@@ -182,6 +193,15 @@
       const r = 7 + random() * 6, pos = findFreePosition(r, by - 52, by + 52, 18, bx - W * .2, bx + W * .2);
       asteroids.push({ x: pos.x, y: pos.y, r, rotation: random() * TAU, spin: (random() - .5) * 1.4, seed: random() * 20 });
     }
+    if (safeTarget) {
+      const corridor = 30;
+      planets = planets.filter(p => p === current || p.target || distanceToSegment(p.x, p.y, current.x, current.y, safeTarget.x, safeTarget.y) > corridor + p.r);
+      asteroids = asteroids.filter(a => distanceToSegment(a.x, a.y, current.x, current.y, safeTarget.x, safeTarget.y) > corridor + a.r);
+    }
+    const normalPlanets = planets.filter(p => !p.hazard);
+    const visibleHazards = planets.filter(p => p.hazard).slice(-Math.min(6, 3 + Math.floor(level / 10)));
+    planets = [...normalPlanets, ...visibleHazards];
+    asteroids = asteroids.slice(-Math.min(6, 2 + Math.floor(level / 8)));
     if (level === 3) toast('ANOMALIA: buracos negros alteram a rota.');
     if (level === 4) toast('CUIDADO: pulsares e asteroides à frente.');
   }
@@ -545,8 +565,8 @@
     const speed = (255 + previewCharge * 290) * (save.boosters > 0 ? 1.15 : 1);
     let x = ship.x, y = ship.y, vx = Math.cos(tangent) * speed, vy = Math.sin(tangent) * speed;
     const points = []; let outcome = 'open';
-    for (let i = 0; i < 46; i++) {
-      const step = .034; let ax = 0, ay = 0;
+    for (let i = 0; i < 92; i++) {
+      const step = .017; let ax = 0, ay = 0;
       for (const p of planets) if (p !== current || p.hazard) {
         const future = futurePlanetPosition(p, (i + 1) * step);
         const dx = future.x - x, dy = future.y - y, d2 = Math.max(500, dx * dx + dy * dy), d = Math.sqrt(d2);
@@ -570,7 +590,7 @@
     ctx.beginPath(); ctx.moveTo(ship.x, ship.y); points.forEach(p => ctx.lineTo(p.x, p.y)); ctx.stroke();
     ctx.setLineDash([]);
     points.forEach((p, i) => {
-      if (i % 4) return;
+      if (i % 8) return;
       ctx.globalAlpha = (1 - i / Math.max(1, points.length)) * (holding ? .9 : .52); ctx.fillStyle = routeColor;
       ctx.beginPath(); ctx.arc(p.x, p.y, i % 8 === 0 ? 2.8 : 1.7, 0, TAU); ctx.fill();
     });
