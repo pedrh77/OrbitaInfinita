@@ -8,7 +8,7 @@
   <title>Órbita Infinita</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2307091a'/%3E%3Ccircle cx='32' cy='34' r='13' fill='%237c5cff'/%3E%3Cellipse cx='32' cy='34' rx='25' ry='9' fill='none' stroke='%236ee7ff' stroke-width='4' transform='rotate(-18 32 34)'/%3E%3Ccircle cx='52' cy='25' r='4' fill='%23ffcf5c'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <main id="game-shell">
@@ -27,6 +27,7 @@
     </header>
 
     <div id="combo" class="combo" aria-hidden="true">PERFEITO ×2</div>
+    <div id="event-banner" class="event-banner" hidden aria-live="polite"><b>CORRIDA ESTELAR</b><span id="event-timer">18.0s</span></div>
     <button id="quit-button" class="quit-button" hidden>DESISTIR</button>
     <section id="start-screen" class="screen active">
       <div class="logo-planet" aria-hidden="true"><span></span></div>
@@ -38,6 +39,7 @@
         <span><b>3</b> Solte para lançar</span>
       </div>
       <button id="play-button" class="primary">JOGAR <span>→</span></button>
+      <button id="missions-button" class="mission-button">MISSÕES DO DIA <span>6</span></button>
       <button id="sound-button" class="text-button" aria-pressed="true">SOM LIGADO</button>
       <a class="legal-link" href="privacy.html">POLÍTICA DE PRIVACIDADE</a>
     </section>
@@ -59,6 +61,15 @@
         <button id="confirm-quit" class="danger-button">DESISTIR E PERDER 30%</button>
         <button id="cancel-quit" class="text-button">CONTINUAR JOGANDO</button>
       </div>
+    </section>
+
+    <section id="missions" class="panel" aria-labelledby="missions-title">
+      <div class="panel-head">
+        <div><p class="eyebrow">6 DESAFIOS DIÁRIOS</p><h2 id="missions-title">Missões</h2></div>
+        <button id="close-missions" class="close" aria-label="Fechar missões">×</button>
+      </div>
+      <p class="mission-reset">Nova seleção diária · 190 missões possíveis</p>
+      <div id="mission-list" class="mission-list"></div>
     </section>
 
     <section id="shop" class="panel" aria-labelledby="shop-title">
@@ -86,6 +97,6 @@
     <aside id="toast" class="toast" role="status"></aside>
   </main>
   <script src="admob.js"></script>
-  <script src="game.js"></script>
+  <script src="game.js?v=3"></script>
 </body>
 </html>

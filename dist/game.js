@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  const shell = document.querySelector('#game-shell');
   const canvas = document.querySelector('#game');
   const ctx = canvas.getContext('2d');
   const ui = {
@@ -14,7 +15,9 @@
     trails: document.querySelector('#trails'), items: document.querySelector('#items'),
     sector: document.querySelector('#sector'), rewardDust: document.querySelector('#reward-dust'),
     quitButton: document.querySelector('#quit-button'), quitConfirm: document.querySelector('#quit-confirm'),
-    quitCopy: document.querySelector('#quit-copy')
+    quitCopy: document.querySelector('#quit-copy'), missions: document.querySelector('#missions'),
+    missionList: document.querySelector('#mission-list'), eventBanner: document.querySelector('#event-banner'),
+    eventTimer: document.querySelector('#event-timer')
   };
 
   const TAU = Math.PI * 2;
@@ -39,12 +42,14 @@
     { id: 'void', name: 'Vácuo', color: '#9b63ff', cost: 1800 },
     { id: 'aurora', name: 'Aurora', color: '#70f0aa', cost: 2600 }
   ];
-  const defaults = { best: 0, coins: 0, selected: 'cometa', owned: ['cometa'], selectedTrail: 'classic', ownedTrails: ['classic'], shields: 0, boosters: 0, sound: true, runs: 0 };
+  const missionCatalog = buildMissionCatalog();
+  const defaults = { best: 0, coins: 0, selected: 'cometa', owned: ['cometa'], selectedTrail: 'classic', ownedTrails: ['classic'], shields: 0, boosters: 0, sound: true, runs: 0, missionDay: '', missionIds: [], missionProgress: {}, missionClaimed: [] };
   let save = loadSave();
-  let W = 0, H = 0, dpr = 1, last = 0, state = 'menu';
+  let W = 0, H = 0, dpr = 1, safeBottom = 0, last = 0, state = 'menu';
   let stars = [], nebulae = [], comets = [], planets = [], particles = [], trail = [], asteroids = [], collectibles = [], phenomena = [];
   let ship, current, targets = [], score = 0, streak = 0, cameraY = 0, cameraTargetY = 0;
-  let holding = false, charge = .35, aimStartX = 0, aimStartY = 0, continued = false, runDust = 0;
+  let holding = false, charge = .35, aimStartX = 0, aimStartY = 0, continued = false, runDust = 0, phaseCharges = 0, runShieldUsed = false;
+  let specialEvent = null;
   let runSeed = 0, random = Math.random;
   let audioCtx = null, musicTimer = null, musicStep = 0;
 
@@ -54,19 +59,98 @@
   }
   function persist() { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); syncUI(); }
   function syncUI() {
+    ensureDailyMissions();
     ui.best.textContent = save.best;
     ui.coins.textContent = save.coins;
     ui.shopCoins.textContent = save.coins;
   }
 
+  function buildMissionCatalog() {
+    const list = [], add = (type, index, target, reward, title, copy, mode = 'max') => list.push({ id: `${type}-${index + 1}`, type, target, reward, title, copy, mode });
+    for (let i = 0; i < 35; i++) add('reach', i, i + 3, 30 + i * 5, `Alcance ${i + 3} planetas`, 'Melhor marca em uma viagem.');
+    for (let i = 0; i < 35; i++) add('dust', i, 20 + i * 10, 25 + i * 6, `Colete ${20 + i * 10} poeiras`, 'Acumule em uma única viagem.');
+    for (let i = 0; i < 35; i++) add('land', i, i + 3, 20 + i * 4, `Pouse em ${i + 3} planetas`, 'Progresso acumulado durante o dia.', 'add');
+    for (let i = 0; i < 30; i++) add('perfect', i, i + 2, 35 + i * 6, `Faça ${i + 2} pousos perfeitos`, 'Progresso acumulado durante o dia.', 'add');
+    for (let i = 0; i < 25; i++) add('power', i, i + 1, 30 + i * 8, `Ative ${i + 1} power-ups`, 'Qualquer benefício encontrado conta.', 'add');
+    for (let i = 0; i < 30; i++) add('noShield', i, i + 3, 50 + i * 8, `Alcance ${i + 3} sem escudo`, 'Pouse sem ativar proteção.');
+    return list;
+  }
+
+  function localDay() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+
+  function hashText(text) {
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+    return hash >>> 0;
+  }
+
+  function ensureDailyMissions() {
+    const day = localDay();
+    if (save.missionDay === day && save.missionIds?.length === 6) return;
+    const rnd = mulberry32(hashText(day));
+    const types = ['reach', 'dust', 'land', 'perfect', 'power', 'noShield'];
+    save.missionDay = day; save.missionProgress = {}; save.missionClaimed = [];
+    save.missionIds = types.map(type => {
+      const group = missionCatalog.filter(m => m.type === type);
+      const playerBand = type === 'reach' || type === 'noShield'
+        ? Math.min(group.length, Math.max(7, save.best + 6))
+        : Math.min(group.length, type === 'power' ? 12 : 18);
+      return group[Math.floor(rnd() * playerBand)].id;
+    });
+    localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+  }
+
+  function dailyMissions() {
+    ensureDailyMissions();
+    return save.missionIds.map(id => missionCatalog.find(m => m.id === id)).filter(Boolean);
+  }
+
+  function recordMission(type, value = 1) {
+    for (const mission of dailyMissions()) {
+      if (mission.type !== type || save.missionClaimed.includes(mission.id)) continue;
+      const previous = save.missionProgress[mission.id] || 0;
+      save.missionProgress[mission.id] = mission.mode === 'add' ? previous + value : Math.max(previous, value);
+    }
+  }
+
   function resize() {
+    shell.scrollTo(0, 0);
+    const previousW = W, previousH = H;
     const rect = canvas.getBoundingClientRect();
     dpr = Math.min(devicePixelRatio || 1, 2);
-    W = rect.width; H = rect.height;
+    W = Math.max(1, rect.width); H = Math.max(1, rect.height);
+    safeBottom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')) || 0;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (previousW && previousH && state !== 'menu' && current) reflowWorld(previousW, previousH);
     makeStars();
     if (state === 'menu') seedMenuWorld();
+  }
+
+  function reflowWorld(previousW, previousH) {
+    const scaleX = Math.min(1, W / previousW);
+    const anchorX = current.x;
+    const moveX = x => W * .5 + (x - anchorX) * scaleX;
+    const moveEntity = entity => { entity.x = moveX(entity.x); };
+    planets.forEach(p => {
+      moveEntity(p);
+      if (p.orbitMotion) p.orbitMotion.cx = moveX(p.orbitMotion.cx);
+    });
+    asteroids.forEach(moveEntity);
+    collectibles.forEach(moveEntity);
+    phenomena.forEach(moveEntity);
+    particles.forEach(moveEntity);
+    trail.forEach(moveEntity);
+    if (ship) {
+      moveEntity(ship);
+      ship.vx *= scaleX;
+    }
+    const currentScreenRatio = Math.max(.2, Math.min(.82, (current.y - cameraY) / previousH || .66));
+    cameraY = current.y - H * currentScreenRatio;
+    cameraTargetY = current.y - H * .66;
   }
 
   function makeStars() {
@@ -94,7 +178,16 @@
   }
 
   function planet(x, y, r, color, seed) {
-    return { x, y, r, color, seed, style: Math.abs(Math.floor(seed)) % 4, pulse: Math.random() * TAU, visited: false, target: false };
+    return { x, y, r, color, seed, style: Math.abs(Math.floor(seed)) % 7, pulse: Math.random() * TAU, visited: false, target: false };
+  }
+
+  function threatBudget(level) {
+    if (level < 3) return 0;
+    return Math.min(5, 1 + Math.floor((level - 3) / 5));
+  }
+
+  function outsideLaunchBubble(entity) {
+    return Math.hypot(entity.x - current.x, entity.y - current.y) > current.r + entity.r + 92;
   }
 
   function findFreePosition(r, yMin, yMax, padding = 24, xMin = 58, xMax = W - 58) {
@@ -125,7 +218,9 @@
   }
 
   function begin() {
-    score = 0; streak = 0; continued = false; holding = false; charge = .35; runDust = 0;
+    document.activeElement?.blur(); shell.scrollTo(0, 0);
+    score = 0; streak = 0; continued = false; holding = false; charge = .35; runDust = 0; phaseCharges = 0; runShieldUsed = false; specialEvent = null;
+    ui.eventBanner.hidden = true;
     cameraY = 0; cameraTargetY = 0; trail = []; particles = []; asteroids = []; collectibles = []; phenomena = [];
     runSeed = Math.floor(Math.random() * 900000) + 100000;
     random = mulberry32(runSeed);
@@ -147,14 +242,17 @@
   function spawnTargets() {
     const level = score + 1;
     const gapY = Math.min(H * .37, 205 + level * 2.4);
-    const margin = 58;
+    const margin = Math.min(58, Math.max(34, W * .12));
+    const horizontalReach = Math.min(W * .44, Math.max(150, H * .72));
+    const targetMinX = Math.max(margin, current.x - horizontalReach);
+    const targetMaxX = Math.min(W - margin, current.x + horizontalReach);
     const choiceCount = level >= 5 ? 4 : 3;
     targets = [];
     for (let i = 0; i < choiceCount; i++) {
       const r = Math.max(20, 32 - level * .22 + random() * 9);
       const movesInOrbit = i % 2 === level % 2;
       const orbitRadius = movesInOrbit ? 18 + random() * 20 : 0;
-      const pos = findFreePosition(r + orbitRadius, current.y - gapY * 1.62, current.y - gapY * .56, 34, margin, W - margin);
+      const pos = findFreePosition(r + orbitRadius, current.y - gapY * 1.62, current.y - gapY * .56, 34, targetMinX, targetMaxX);
       const next = planet(pos.x, pos.y, r, palette[(level + i * 2) % palette.length], level * 37 + i * 11);
       if (movesInOrbit) {
         next.orbitMotion = {
@@ -173,62 +271,57 @@
     const routeY = current.y + (collectibleTarget.y - current.y) * collectibleT;
     const collectiblePos = findFreePosition(7, routeY - 38, routeY + 38, 16, routeX - 62, routeX + 62);
     collectibles.push({ x: collectiblePos.x, y: collectiblePos.y, r: 7, pulse: random() * TAU, collected: false });
-    if (level >= 2 && random() < .5) {
-      const pos = findFreePosition(10, current.y - gapY * 1.18, current.y - gapY * .24, 24);
-      phenomena.push({ type: 'shieldOrb', x: pos.x, y: pos.y, r: 10, pulse: random() * TAU, used: false });
+    const powerTypes = level < 4 ? ['shieldOrb', 'boostGate'] : ['shieldOrb', 'boostGate', 'phaseOrb', 'starCache'];
+    const powerCount = level < 7 ? 1 : random() < .42 ? 2 : 1;
+    for (let i = 0; i < powerCount; i++) {
+      const type = powerTypes[Math.floor(random() * powerTypes.length)];
+      const r = type === 'boostGate' ? 17 : type === 'starCache' ? 12 : 10;
+      const pos = findFreePosition(r, current.y - gapY * 1.2, current.y - gapY * .3, 24);
+      phenomena.push({ type, x: pos.x, y: pos.y, r, pulse: random() * TAU, used: false });
     }
-    if (level >= 3 && random() < .65) {
-      const pos = findFreePosition(17, current.y - gapY * 1.2, current.y - gapY * .26, 26);
-      phenomena.push({ type: 'boostGate', x: pos.x, y: pos.y, r: 17, pulse: random() * TAU, used: false });
-    }
-    if (level >= 4) {
-      const mineCount = Math.min(2, 1 + Math.floor((level - 4) / 14));
-      for (let i = 0; i < mineCount; i++) {
-        if (random() < .28) continue;
-        const pos = findFreePosition(9, current.y - gapY * 1.18, current.y - gapY * .24, 24);
-        phenomena.push({ type: 'mine', x: pos.x, y: pos.y, r: 9, pulse: random() * TAU, used: false });
+
+    const unlockedThreats = ['blackHole'];
+    if (level >= 4) unlockedThreats.push('asteroid');
+    if (level >= 5) unlockedThreats.push('nebula');
+    if (level >= 6) unlockedThreats.push('mine');
+    if (level >= 8) unlockedThreats.push('pulsar');
+    if (level >= 10) unlockedThreats.push('solarWind');
+    if (level >= 12) unlockedThreats.push('gravityRift');
+    const deck = [...unlockedThreats].sort(() => random() - .5);
+    for (let i = 0; i < threatBudget(level); i++) {
+      const type = deck[i % deck.length];
+      const dangerTop = current.y - gapY * 1.24;
+      const dangerBottom = current.y - Math.max(132, gapY * .42);
+      if (type === 'asteroid') {
+        const r = 8 + random() * 5, pos = findFreePosition(r, dangerTop, dangerBottom, 26);
+        asteroids.push({ x: pos.x, y: pos.y, r, rotation: random() * TAU, spin: (random() - .5) * 1.4, seed: random() * 20 });
+      } else if (type === 'blackHole' || type === 'pulsar') {
+        const r = 13 + random() * 6, pos = findFreePosition(r, dangerTop, dangerBottom, 32);
+        planets.push({ ...planet(pos.x, pos.y, r, type === 'pulsar' ? '#6ee7ff' : '#9b63ff', 100 + level * 17 + i), hazard: true, hazardType: type, gravity: type === 'pulsar' ? -(265000 + level * 4500) : 0 });
+      } else {
+        const r = type === 'mine' ? 9 : type === 'nebula' ? 38 + random() * 10 : 34 + random() * 9;
+        const pos = findFreePosition(r, dangerTop, dangerBottom, type === 'mine' ? 27 : 18);
+        phenomena.push({ type, x: pos.x, y: pos.y, r, pulse: random() * TAU, used: false, direction: random() < .5 ? -1 : 1 });
       }
-    }
-    if (level >= 5 && random() < .46) {
-      const r = 34 + random() * 13;
-      const pos = findFreePosition(r, current.y - gapY * 1.2, current.y - gapY * .3, 18);
-      phenomena.push({ type: 'nebula', x: pos.x, y: pos.y, r, pulse: random() * TAU, used: false });
-    }
-    const blackHoleCount = level < 3 ? 0 : Math.min(4, 2 + Math.floor((level - 3) / 5));
-    for (let i = 0; i < blackHoleCount; i++) {
-      if (level > 3 && random() < .22) continue;
-      const r = 13 + random() * 7, pos = findFreePosition(r, current.y - gapY * 1.18, current.y - gapY * .24, 30);
-      const hole = { ...planet(pos.x, pos.y, r, '#9b63ff', 100 + level * 7 + i), hazard: true, hazardType: 'blackHole', gravity: 0 };
-      planets.push(hole);
-    }
-    const pulsarCount = level < 4 ? 0 : Math.min(2, 1 + Math.floor((level - 4) / 7));
-    for (let i = 0; i < pulsarCount; i++) {
-      const r = 11 + random() * 5, pos = findFreePosition(r, current.y - gapY * 1.24, current.y - gapY * .28, 30);
-      planets.push({ ...planet(pos.x, pos.y, r, '#6ee7ff', 600 + level * 9 + i), hazard: true, hazardType: 'pulsar', gravity: -(300000 + level * 7000) });
-    }
-    const asteroidCount = level < 4 ? 0 : Math.min(5, 1 + Math.floor((level - 4) / 4));
-    for (let i = 0; i < asteroidCount; i++) {
-      const t = .2 + random() * .62;
-      const routeTarget = targets[i % targets.length];
-      const bx = current.x + (routeTarget.x - current.x) * t;
-      const by = current.y + (routeTarget.y - current.y) * t;
-      const r = 7 + random() * 6, pos = findFreePosition(r, by - 52, by + 52, 18, bx - W * .2, bx + W * .2);
-      asteroids.push({ x: pos.x, y: pos.y, r, rotation: random() * TAU, spin: (random() - .5) * 1.4, seed: random() * 20 });
     }
     if (safeTarget) {
       const corridor = 30;
       planets = planets.filter(p => p === current || p.target || distanceToSegment(p.x, p.y, current.x, current.y, safeTarget.x, safeTarget.y) > corridor + p.r);
       asteroids = asteroids.filter(a => distanceToSegment(a.x, a.y, current.x, current.y, safeTarget.x, safeTarget.y) > corridor + a.r);
-      phenomena = phenomena.filter(f => f.type !== 'mine' || distanceToSegment(f.x, f.y, current.x, current.y, safeTarget.x, safeTarget.y) > corridor + f.r);
+      phenomena = phenomena.filter(f => !['mine', 'gravityRift', 'solarWind'].includes(f.type) || distanceToSegment(f.x, f.y, current.x, current.y, safeTarget.x, safeTarget.y) > corridor + f.r);
     }
+    planets = planets.filter(p => !p.hazard || outsideLaunchBubble(p));
+    asteroids = asteroids.filter(outsideLaunchBubble);
+    phenomena = phenomena.filter(f => !['mine', 'nebula', 'gravityRift', 'solarWind'].includes(f.type) || outsideLaunchBubble(f));
     const normalPlanets = planets.filter(p => !p.hazard);
     const visibleHazards = planets.filter(p => p.hazard).slice(-Math.min(6, 3 + Math.floor(level / 10)));
     planets = [...normalPlanets, ...visibleHazards];
     asteroids = asteroids.slice(-Math.min(6, 2 + Math.floor(level / 8)));
     phenomena = phenomena.filter(f => !f.used && f.y - cameraTargetY > -180 && f.y - cameraTargetY < H + 180).slice(-8);
-    if (level === 3) toast('ANOMALIA: buracos negros alteram a rota.');
-    if (level === 4) toast('CUIDADO: pulsares e asteroides à frente.');
-    if (level === 5) toast('NOVO: portais de impulso, escudos, minas e nebulosas.');
+    if (level === 3) toast('ANOMALIA: primeiro obstáculo detectado.');
+    if (level === 4) toast('NOVO: fase quântica e reservas de poeira.');
+    if (level === 10) toast('NOVO: ventos solares alteram a rota.');
+    if (level === 12) toast('NOVO: fendas gravitacionais giram a nave.');
   }
 
   function placeOrbitShip() {
@@ -250,6 +343,25 @@
       x: p.orbitMotion.cx + Math.cos(angle) * p.orbitMotion.radius,
       y: p.orbitMotion.cy + Math.sin(angle) * p.orbitMotion.radius
     };
+  }
+
+  function gravityRange(p) {
+    if (p.hazard) return p.gravity ? 210 + p.r * 6 : 0;
+    return 190 + p.r * 3.4;
+  }
+
+  function gravityVector(p, x, y, seconds = 0) {
+    const range = gravityRange(p);
+    if (!range) return { ax: 0, ay: 0 };
+    const future = futurePlanetPosition(p, seconds);
+    const dx = future.x - x, dy = future.y - y, distance = Math.max(1, Math.hypot(dx, dy));
+    if (distance >= range) return { ax: 0, ay: 0 };
+    const proximity = 1 - distance / range;
+    const smoothInfluence = proximity * proximity * (3 - 2 * proximity);
+    const mass = p.hazard ? Math.abs(p.gravity) : 850000 * (.72 + p.r / 52);
+    const polarity = p.hazard && p.gravity < 0 ? -1 : 1;
+    const strength = Math.min(p.hazard ? 135 : 190, mass / (distance * distance + 1200) * smoothInfluence) * polarity;
+    return { ax: dx / distance * strength, ay: dy / distance * strength };
   }
 
   function press(e) {
@@ -297,6 +409,7 @@
     }
     if (state === 'over') { updateParticles(dt); return; }
     if (state !== 'playing') return;
+    updateSpecialEvent();
     const cameraDelta = cameraTargetY - cameraY;
     cameraY += cameraDelta * Math.min(1, worldDt * 3.5);
     if (Math.abs(cameraDelta) < .35) cameraY = cameraTargetY;
@@ -311,19 +424,25 @@
     } else if (ship.mode === 'flight') {
       let ax = 0, ay = 0;
       for (const p of planets) {
-        if (p !== current || p.hazard) {
-          const dx = p.x - ship.x, dy = p.y - ship.y;
-          const d2 = Math.max(500, dx * dx + dy * dy);
-          const planetGravity = 125000 * (.7 + p.r / 48);
-          const g = (p.hazard ? p.gravity : planetGravity) / d2;
-          const d = Math.sqrt(d2);
-          ax += dx / d * g; ay += dy / d * g;
-        }
+        const force = gravityVector(p, ship.x, ship.y);
+        ax += force.ax; ay += force.ay;
       }
       ship.vx += ax * dt; ship.vy += ay * dt;
       for (const f of phenomena) if (!f.used && f.type === 'nebula' && Math.hypot(ship.x - f.x, ship.y - f.y) < f.r) {
         const drag = Math.max(.985, 1 - dt * .65);
         ship.vx *= drag; ship.vy *= drag;
+      }
+      for (const f of phenomena) {
+        if (f.used || !['gravityRift', 'solarWind'].includes(f.type)) continue;
+        const dx = ship.x - f.x, dy = ship.y - f.y, distance = Math.hypot(dx, dy);
+        if (distance >= f.r || distance < 1) continue;
+        const strength = (1 - distance / f.r) * (f.type === 'gravityRift' ? 165 : 115);
+        if (f.type === 'gravityRift') {
+          ship.vx += -dy / distance * strength * dt * f.direction;
+          ship.vy += dx / distance * strength * dt * f.direction;
+        } else {
+          ship.vx += strength * dt * f.direction;
+        }
       }
       ship.x += ship.vx * dt; ship.y += ship.vy * dt;
       trail.push({ x: ship.x, y: ship.y, life: 1 });
@@ -337,34 +456,73 @@
 
   function checkCollisions() {
     for (const p of planets) {
-      if (p === current) continue;
       const dx = ship.x - p.x, dy = ship.y - p.y;
       const d = Math.hypot(dx, dy);
       if (d < p.r + 8) {
         if (p.target) land(p, d);
+        else if (consumePhase(p.x, p.y)) planets = planets.filter(q => q !== p);
         else lose();
         return;
       }
     }
-    for (const a of asteroids) {
-      if (Math.hypot(ship.x - a.x, ship.y - a.y) < a.r + 7) { lose(); return; }
+    for (let i = asteroids.length - 1; i >= 0; i--) {
+      const a = asteroids[i];
+      if (Math.hypot(ship.x - a.x, ship.y - a.y) < a.r + 7) {
+        if (consumePhase(a.x, a.y)) asteroids.splice(i, 1); else lose();
+        return;
+      }
     }
     for (const c of collectibles) {
       if (!c.collected && Math.hypot(ship.x - c.x, ship.y - c.y) < c.r + 11) {
-        c.collected = true; save.coins += 15; runDust += 15; persist(); burst(c.x, c.y, '#ffcf5c', 18, 120); ping(980, .08, 'sine'); toast('+15 POEIRA ESTELAR');
+        c.collected = true; save.coins += 15; runDust += 15; recordMission('dust', runDust); persist(); burst(c.x, c.y, '#ffcf5c', 18, 120); ping(980, .08, 'sine'); toast('+15 POEIRA ESTELAR');
       }
     }
     for (const f of phenomena) {
-      if (f.used || f.type === 'nebula') continue;
+      if (f.used || ['nebula', 'gravityRift', 'solarWind'].includes(f.type)) continue;
       if (Math.hypot(ship.x - f.x, ship.y - f.y) >= f.r + 8) continue;
-      if (f.type === 'mine') { lose(); return; }
+      if (f.type === 'mine') {
+        if (consumePhase(f.x, f.y)) f.used = true; else lose();
+        return;
+      }
       f.used = true;
+      recordMission('power', 1);
       if (f.type === 'shieldOrb') {
         save.shields += 1; persist(); burst(f.x, f.y, '#6ee7ff', 22, 145); ping(1120, .1, 'sine'); toast('ESCUDO ENCONTRADO');
       } else if (f.type === 'boostGate') {
-        ship.vx *= 1.18; ship.vy *= 1.18; save.coins += 8; runDust += 8; persist(); burst(f.x, f.y, '#ffcf5c', 20, 160); ping(760, .08, 'triangle'); toast('PORTAL DE IMPULSO · +8 POEIRA');
+        ship.vx *= 1.18; ship.vy *= 1.18; save.coins += 8; runDust += 8; recordMission('dust', runDust); persist(); burst(f.x, f.y, '#ffcf5c', 20, 160); ping(760, .08, 'triangle'); toast('PORTAL DE IMPULSO · +8 POEIRA');
+      } else if (f.type === 'phaseOrb') {
+        phaseCharges = Math.min(2, phaseCharges + 1); persist(); burst(f.x, f.y, '#c894ff', 24, 150); ping(1240, .1, 'sine'); toast('FASE QUÂNTICA · ATRAVESSE 1 AMEAÇA');
+      } else if (f.type === 'starCache') {
+        save.coins += 35; runDust += 35; recordMission('dust', runDust); persist(); burst(f.x, f.y, '#ffcf5c', 26, 165); ping(1040, .12, 'triangle'); toast('RESERVA ESTELAR · +35 POEIRA');
       }
     }
+  }
+
+  function consumePhase(x, y) {
+    if (phaseCharges < 1) return false;
+    phaseCharges -= 1; burst(x, y, '#c894ff', 30, 190); ping(1320, .12, 'sine'); toast('FASE QUÂNTICA ATIVADA');
+    return true;
+  }
+
+  function updateSpecialEvent() {
+    if (!specialEvent) return;
+    const remaining = Math.max(0, specialEvent.deadline - performance.now());
+    ui.eventTimer.textContent = `${(remaining / 1000).toFixed(1)}s`;
+    if (remaining > 0) return;
+    specialEvent = null; ui.eventBanner.hidden = true; ping(150, .14, 'sawtooth'); toast('CORRIDA ENCERRADA · CONTINUE A VIAGEM');
+  }
+
+  function updateEventAfterLanding() {
+    if (specialEvent && score >= specialEvent.targetScore) {
+      const reward = specialEvent.reward;
+      specialEvent = null; ui.eventBanner.hidden = true; save.coins += reward; runDust += reward;
+      recordMission('dust', runDust); persist(); burst(current.x, current.y, '#ffcf5c', 34, 210); ping(1320, .16, 'triangle'); toast(`CORRIDA VENCIDA · +${reward} POEIRA`);
+      return;
+    }
+    const sector = score + 1;
+    if (sector % 10 !== 0) return;
+    specialEvent = { deadline: performance.now() + 18000, targetScore: score + 3, reward: 100 + sector / 10 * 25 };
+    ui.eventTimer.textContent = '18.0s'; ui.eventBanner.hidden = false; ping(880, .12, 'square'); toast('EVENTO: POUSE EM 3 PLANETAS EM 18 SEGUNDOS');
   }
 
   function land(p) {
@@ -372,7 +530,12 @@
     const centerHit = speed < 480;
     score += 1; streak = centerHit ? streak + 1 : 0;
     const reward = 3 + Math.min(12, streak * 2);
-    save.coins += reward; runDust += reward; save.best = Math.max(save.best, score); persist();
+    save.coins += reward; runDust += reward; save.best = Math.max(save.best, score);
+    recordMission('reach', score); recordMission('dust', runDust); recordMission('land', 1);
+    if (centerHit) recordMission('perfect', 1);
+    if (!runShieldUsed) recordMission('noShield', score);
+    persist();
+    updateEventAfterLanding();
     ui.score.textContent = score;
     ui.sector.textContent = `SETOR ${String(score + 1).padStart(2, '0')}`;
     p.target = false; p.visited = true; p.orbitMotion = null; current = p;
@@ -383,20 +546,20 @@
     burst(p.x, p.y, p.color, centerHit ? 24 : 14, 155);
     ping(700 + Math.min(score, 12) * 28, .1, 'sine');
     if (centerHit && streak >= 2) popCombo(streak);
-    planets = planets.filter(q => q === current || (!q.target && q.y - cameraTargetY > -180 && q.y - cameraTargetY < H + 180));
-    asteroids = asteroids.filter(a => a.y - cameraTargetY > -180 && a.y - cameraTargetY < H + 180);
-    collectibles = collectibles.filter(c => !c.collected && c.y - cameraTargetY > -180 && c.y - cameraTargetY < H + 180);
-    phenomena = phenomena.filter(f => !f.used && f.y - cameraTargetY > -180 && f.y - cameraTargetY < H + 180);
+    planets = [current];
+    asteroids = [];
+    collectibles = [];
+    phenomena = [];
     spawnTargets();
   }
 
   function lose() {
     if (state !== 'playing') return;
     if (save.shields > 0) {
-      save.shields -= 1; persist(); holding = false; ship.mode = 'orbit'; ship.vx = ship.vy = 0; ship.aimAngle = -Math.PI / 2; placeOrbitShip();
+      save.shields -= 1; runShieldUsed = true; persist(); holding = false; ship.mode = 'orbit'; ship.vx = ship.vy = 0; ship.aimAngle = -Math.PI / 2; placeOrbitShip();
       burst(current.x, current.y, '#6ee7ff', 26, 150); ping(820, .12, 'sine'); toast('ESCUDO DE EMERGÊNCIA ATIVADO'); return;
     }
-    state = 'over'; holding = false; save.runs += 1; persist();
+    state = 'over'; holding = false; specialEvent = null; ui.eventBanner.hidden = true; save.runs += 1; persist();
     ui.quitButton.hidden = true; ui.quitConfirm.hidden = true; stopMusic();
     burst(ship.x, ship.y, skinColor(), 30, 210);
     ping(110, .22, 'sawtooth');
@@ -406,7 +569,7 @@
       ui.continueButton.style.display = continued ? 'none' : 'flex';
       ui.over.classList.add('active');
     }, 420);
-    if (save.runs % 2 === 0) {
+    if (save.runs >= 3 && (save.runs - 3) % 2 === 0) {
       window.OrbitaAds.showInterstitial('game-over').catch(() => {});
     }
   }
@@ -443,7 +606,7 @@
     if (state !== 'paused') return;
     const penalty = Math.min(save.coins, Math.floor(runDust * .3));
     save.coins -= penalty; save.best = Math.max(save.best, score); save.runs += 1; persist();
-    state = 'over'; continued = true; ui.quitConfirm.hidden = true; ui.quitButton.hidden = true; stopMusic();
+    state = 'over'; continued = true; specialEvent = null; ui.eventBanner.hidden = true; ui.quitConfirm.hidden = true; ui.quitButton.hidden = true; stopMusic();
     ui.final.textContent = score;
     ui.result.textContent = penalty ? `Viagem encerrada. Você perdeu ✦ ${penalty}.` : 'Viagem encerrada sem perda de poeira.';
     ui.continueButton.style.display = 'none'; ui.over.classList.add('active');
@@ -528,6 +691,15 @@
   function drawPlanet(p) {
     const glow = p.target ? 15 + Math.sin(p.pulse * 3) * 5 : p.hazard ? 24 : 8;
     ctx.save();
+    if (!p.hazard && ship && state === 'playing') {
+      const range = gravityRange(p), distance = Math.hypot(ship.x - p.x, ship.y - p.y);
+      if (distance < range) {
+        const pull = 1 - distance / range;
+        ctx.globalAlpha = .08 + pull * .2; ctx.strokeStyle = '#9cf4ff'; ctx.lineWidth = 1 + pull;
+        ctx.setLineDash([2, 7]); ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r + 18 + Math.sin(p.pulse * 2) * 3, 0, TAU); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+    }
     if (!p.hazard && p.style === 1) {
       ctx.globalAlpha = .55; ctx.strokeStyle = tint(p.color, 28); ctx.lineWidth = Math.max(2, p.r * .1);
       ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * 1.55, p.r * .36, -.32, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
@@ -545,7 +717,7 @@
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
     ctx.shadowBlur = 0;
     if (!p.hazard) {
-      if (p.style >= 2) {
+      if (p.style === 2) {
         ctx.save();
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r - 1, 0, TAU); ctx.clip();
         const surfaceSpin = ((p.pulse * p.r * .62 + p.seed * 13) % (p.r * 2.8)) - p.r * 1.4;
@@ -558,6 +730,37 @@
         ctx.globalAlpha = .12; ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1, p.r * .045);
         ctx.beginPath(); ctx.ellipse(p.x, p.y - p.r * .28, p.r * .94, p.r * .18, 0, 0, TAU); ctx.stroke();
         ctx.beginPath(); ctx.ellipse(p.x, p.y + p.r * .3, p.r * .9, p.r * .16, 0, 0, TAU); ctx.stroke();
+        ctx.restore();
+      } else if (p.style === 3) {
+        ctx.save(); ctx.beginPath(); ctx.arc(p.x, p.y, p.r - 1, 0, TAU); ctx.clip();
+        ctx.globalAlpha = .32; ctx.fillStyle = '#85f0c0';
+        for (let i = 0; i < 4; i++) {
+          const a = p.seed + i * 1.8 + p.pulse * .18;
+          ctx.beginPath(); ctx.ellipse(p.x + Math.cos(a) * p.r * .48, p.y + Math.sin(a * 1.3) * p.r * .32, p.r * .3, p.r * .15, a, 0, TAU); ctx.fill();
+        }
+        ctx.restore();
+      } else if (p.style === 4) {
+        ctx.save(); ctx.beginPath(); ctx.arc(p.x, p.y, p.r - 1, 0, TAU); ctx.clip();
+        ctx.globalAlpha = .75; ctx.strokeStyle = '#ffb24d'; ctx.shadowColor = '#ff5c35'; ctx.shadowBlur = 7; ctx.lineWidth = Math.max(1, p.r * .055);
+        for (let i = 0; i < 4; i++) {
+          const a = p.seed * .3 + i * 1.55;
+          ctx.beginPath(); ctx.moveTo(p.x + Math.cos(a) * p.r * .12, p.y + Math.sin(a) * p.r * .12); ctx.lineTo(p.x + Math.cos(a + .25) * p.r * .52, p.y + Math.sin(a + .25) * p.r * .52); ctx.lineTo(p.x + Math.cos(a - .08) * p.r, p.y + Math.sin(a - .08) * p.r); ctx.stroke();
+        }
+        ctx.restore();
+      } else if (p.style === 5) {
+        ctx.save(); ctx.beginPath(); ctx.arc(p.x, p.y, p.r - 1, 0, TAU); ctx.clip();
+        ctx.globalAlpha = .55; ctx.strokeStyle = '#e9fbff'; ctx.lineWidth = Math.max(1, p.r * .045);
+        for (let i = 0; i < 6; i++) {
+          const a = i * TAU / 6 + p.seed; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + Math.cos(a) * p.r, p.y + Math.sin(a) * p.r); ctx.stroke();
+        }
+        ctx.restore();
+      } else if (p.style === 6) {
+        ctx.save(); ctx.beginPath(); ctx.arc(p.x, p.y, p.r - 1, 0, TAU); ctx.clip();
+        ctx.globalAlpha = .28; ctx.fillStyle = '#ffdb72';
+        for (let i = 0; i < 7; i++) {
+          const a = p.seed + i * .94 + p.pulse * .1, rr = p.r * (.2 + (i % 3) * .18);
+          ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * rr, p.y + Math.sin(a * 1.2) * rr, p.r * .12, 0, TAU); ctx.fill();
+        }
         ctx.restore();
       }
       ctx.globalAlpha = p.style < 2 ? .18 : .24; ctx.fillStyle = '#fff';
@@ -632,6 +835,29 @@
       ctx.rotate(f.pulse * .35); ctx.shadowColor = '#ffcf5c'; ctx.shadowBlur = 16; ctx.strokeStyle = '#ffcf5c'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(0, 0, f.r, -.3, Math.PI + .3); ctx.stroke();
       ctx.globalAlpha = .45; ctx.beginPath(); ctx.arc(0, 0, f.r * .65, Math.PI - .3, TAU + .3); ctx.stroke();
+    } else if (f.type === 'phaseOrb') {
+      ctx.rotate(-f.pulse * .28); ctx.shadowColor = '#c894ff'; ctx.shadowBlur = 20; ctx.strokeStyle = '#e6c8ff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, f.r, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = .7; ctx.beginPath(); ctx.arc(0, 0, f.r * .48, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-f.r * .8, 0); ctx.lineTo(f.r * .8, 0); ctx.stroke();
+    } else if (f.type === 'starCache') {
+      ctx.rotate(f.pulse * .22); ctx.shadowColor = '#ffcf5c'; ctx.shadowBlur = 22; ctx.fillStyle = '#ffcf5c';
+      ctx.beginPath();
+      for (let i = 0; i < 12; i++) { const a = -Math.PI / 2 + i * TAU / 12, r = i % 2 ? f.r * .42 : f.r; i ? ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+      ctx.closePath(); ctx.fill();
+    } else if (f.type === 'gravityRift') {
+      ctx.rotate(f.pulse * .18 * f.direction); ctx.globalAlpha = .72; ctx.strokeStyle = '#c081ff'; ctx.shadowColor = '#7c5cff'; ctx.shadowBlur = 18;
+      for (let i = 0; i < 3; i++) {
+        ctx.lineWidth = 2 - i * .4; ctx.beginPath(); ctx.arc(0, 0, f.r * (.34 + i * .24), i * 1.1, i * 1.1 + Math.PI * 1.45); ctx.stroke();
+      }
+      ctx.globalAlpha = .18; ctx.fillStyle = '#7c5cff'; ctx.beginPath(); ctx.arc(0, 0, f.r, 0, TAU); ctx.fill();
+    } else if (f.type === 'solarWind') {
+      ctx.globalAlpha = .16; ctx.fillStyle = '#ffb45c'; ctx.beginPath(); ctx.arc(0, 0, f.r, 0, TAU); ctx.fill();
+      ctx.globalAlpha = .75; ctx.strokeStyle = '#ffd58a'; ctx.lineWidth = 1.5;
+      for (let i = -1; i <= 1; i++) {
+        const y = i * f.r * .34 + Math.sin(f.pulse + i) * 3;
+        ctx.beginPath(); ctx.moveTo(-f.r * f.direction, y); ctx.quadraticCurveTo(0, y - 7 * f.direction, f.r * f.direction, y); ctx.stroke();
+      }
     } else if (f.type === 'mine') {
       ctx.rotate(f.pulse * .18); ctx.shadowColor = '#ff4f91'; ctx.shadowBlur = 18; ctx.fillStyle = '#ff4f91'; ctx.strokeStyle = '#ff9fc1';
       ctx.beginPath();
@@ -655,6 +881,10 @@
     ctx.save(); ctx.translate(ship.x, ship.y); ctx.rotate(angle); ctx.shadowColor = skinColor(); ctx.shadowBlur = 14; ctx.fillStyle = skinColor();
     ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(7, 8); ctx.lineTo(2, 6); ctx.lineTo(0, 12); ctx.lineTo(-2, 6); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill();
     ctx.shadowBlur = 0; ctx.fillStyle = '#151933'; ctx.beginPath(); ctx.arc(0, -2, 2.8, 0, TAU); ctx.fill();
+    if (phaseCharges > 0) {
+      ctx.globalAlpha = .72; ctx.strokeStyle = '#d9adff'; ctx.lineWidth = 1.6; ctx.shadowColor = '#c894ff'; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.arc(0, 0, 15 + Math.sin(performance.now() * .008) * 1.5, 0, TAU); ctx.stroke();
+    }
     ctx.restore();
     if (ship.mode === 'orbit') drawPrediction();
   }
@@ -667,11 +897,9 @@
     const points = [], previewBoosts = new Set(); let outcome = 'open';
     for (let i = 0; i < 92; i++) {
       const step = .017; let ax = 0, ay = 0;
-      for (const p of planets) if (p !== current || p.hazard) {
-        const future = futurePlanetPosition(p, (i + 1) * step);
-        const dx = future.x - x, dy = future.y - y, d2 = Math.max(500, dx * dx + dy * dy), d = Math.sqrt(d2);
-        const planetGravity = 125000 * (.7 + p.r / 48), g = (p.hazard ? p.gravity : planetGravity) / d2;
-        ax += dx / d * g; ay += dy / d * g;
+      for (const p of planets) {
+        const force = gravityVector(p, x, y, (i + 1) * step);
+        ax += force.ax; ay += force.ay;
       }
       vx += ax * step; vy += ay * step;
       for (const f of phenomena) if (!f.used && f.type === 'nebula' && Math.hypot(x - f.x, y - f.y) < f.r) {
@@ -682,7 +910,6 @@
         previewBoosts.add(f); vx *= 1.18; vy *= 1.18;
       }
       for (const p of planets) {
-        if (p === current) continue;
         const future = futurePlanetPosition(p, (i + 1) * step);
         if (Math.hypot(x - future.x, y - future.y) < p.r + 7) { outcome = p.target ? 'safe' : 'danger'; break; }
       }
@@ -712,7 +939,7 @@
   }
 
   function drawCharge() {
-    const w = Math.min(220, W * .54), x = (W - w) / 2, y = H - 38;
+    const w = Math.min(220, W * .54), x = (W - w) / 2, y = H - Math.max(38, safeBottom + 22);
     ctx.save(); ctx.fillStyle = '#11152fd9'; roundRect(x, y, w, 10, 5); ctx.fill();
     const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, '#6ee7ff'); g.addColorStop(.7, '#7c5cff'); g.addColorStop(1, '#ffcf5c');
     ctx.fillStyle = g; roundRect(x + 2, y + 2, (w - 4) * charge, 6, 3); ctx.fill(); ctx.restore();
@@ -825,11 +1052,31 @@
     });
   }
 
+  function renderMissions() {
+    ui.missionList.innerHTML = '';
+    for (const mission of dailyMissions()) {
+      const progress = Math.min(mission.target, save.missionProgress[mission.id] || 0);
+      const complete = progress >= mission.target, claimed = save.missionClaimed.includes(mission.id);
+      const card = document.createElement('article');
+      card.className = `mission-card ${complete ? 'complete' : ''}`;
+      card.innerHTML = `<div><h3>${mission.title}</h3><p>${mission.copy} · ${progress}/${mission.target}</p></div><button class="mission-reward ${claimed ? 'claimed' : ''}" ${complete && !claimed ? '' : 'disabled'}>${claimed ? 'COLETADA' : `✦ ${mission.reward}`}</button><div class="mission-progress"><span style="width:${progress / mission.target * 100}%"></span></div>`;
+      card.querySelector('button').addEventListener('click', () => {
+        if (!complete || claimed || save.missionClaimed.includes(mission.id)) return;
+        save.missionClaimed.push(mission.id); save.coins += mission.reward; persist(); renderMissions();
+        ping(1080, .12, 'sine'); toast(`MISSÃO CONCLUÍDA · +${mission.reward} POEIRA`);
+      });
+      ui.missionList.appendChild(card);
+    }
+  }
+
   function renderShop() { renderSkins(); renderTrails(); renderItems(); }
   function openShop() { renderShop(); ui.shop.classList.add('open'); ui.shopCoins.textContent = save.coins; }
   function closeShop() { ui.shop.classList.remove('open'); }
+  function openMissions() { renderMissions(); ui.shop.classList.remove('open'); ui.missions.classList.add('open'); }
+  function closeMissions() { ui.missions.classList.remove('open'); }
 
   window.OrbitaHandleBack = () => {
+    if (ui.missions.classList.contains('open')) { closeMissions(); return true; }
     if (ui.shop.classList.contains('open')) { closeShop(); return true; }
     if (!ui.quitConfirm.hidden) { cancelQuit(); return true; }
     if (ui.over.classList.contains('active')) {
@@ -846,6 +1093,8 @@
   document.querySelector('#home-button').addEventListener('click', () => { state = 'menu'; cameraY = cameraTargetY = 0; stopMusic(); ui.quitButton.hidden = true; ui.over.classList.remove('active'); ui.start.classList.add('active'); seedMenuWorld(); });
   document.querySelector('#shop-button').addEventListener('click', openShop);
   document.querySelector('#close-shop').addEventListener('click', closeShop);
+  document.querySelector('#missions-button').addEventListener('click', openMissions);
+  document.querySelector('#close-missions').addEventListener('click', closeMissions);
   document.querySelector('#sound-button').addEventListener('click', e => {
     save.sound = !save.sound; e.currentTarget.textContent = save.sound ? 'SOM LIGADO' : 'SOM DESLIGADO'; e.currentTarget.setAttribute('aria-pressed', save.sound); persist();
     save.sound && state === 'playing' ? startMusic() : stopMusic();
@@ -875,7 +1124,15 @@
   canvas.addEventListener('pointermove', aim);
   window.addEventListener('pointerup', release);
   window.addEventListener('pointercancel', release);
-  window.addEventListener('resize', resize);
+  let resizeFrame = 0;
+  const scheduleResize = () => {
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(resize);
+  };
+  window.addEventListener('resize', scheduleResize);
+  window.visualViewport?.addEventListener('resize', scheduleResize);
+  shell.addEventListener('scroll', () => shell.scrollTo(0, 0), { passive: true });
+  if ('ResizeObserver' in window) new ResizeObserver(scheduleResize).observe(shell);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { holding = false; stopMusic(); }
     else if (state === 'playing') startMusic();
