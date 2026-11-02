@@ -30,7 +30,8 @@
         shown: false, rewarded: false, error: 'native-timeout'
       }), 120000);
       pending.set(requestId, { resolve, timer });
-      bridge.requestAd(type, placement, requestId);
+      try { bridge.requestAd(type, placement, requestId); }
+      catch { finish(requestId, { shown: false, rewarded: false, error: 'native-request-failed' }); }
     });
   }
 

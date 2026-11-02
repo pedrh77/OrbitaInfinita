@@ -6,8 +6,10 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
-import android.view.View;
+import android.util.Log;
 import android.webkit.CookieManager;
+import android.webkit.ConsoleMessage;
+import android.webkit.WebChromeClient;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -41,7 +43,6 @@ public final class MainActivity extends ComponentActivity {
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.rgb(7, 9, 26));
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         setContentView(webView);
 
         WebSettings settings = webView.getSettings();
@@ -63,6 +64,17 @@ public final class MainActivity extends ComponentActivity {
         CookieManager.getInstance().setAcceptCookie(false);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
+        if (BuildConfig.DEBUG) {
+            webView.setWebChromeClient(new WebChromeClient() {
+                @Override public boolean onConsoleMessage(ConsoleMessage message) {
+                    if (message.message().startsWith("[OrbitaPerf] ")) {
+                        Log.i("OrbitaPerf", message.message().substring(13));
+                        return true;
+                    }
+                    return super.onConsoleMessage(message);
+                }
+            });
+        }
 
         adMobBridge = new AdMobBridge(this, webView);
         privacyBridge = new PrivacyBridge(this, webView, this::initializeAds);
@@ -70,6 +82,13 @@ public final class MainActivity extends ComponentActivity {
         webView.addJavascriptInterface(privacyBridge, "OrbitaNativePrivacy");
 
         webView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView view, String url) {
+                if (BuildConfig.DEBUG && GAME_URL.equals(url)
+                        && getIntent().getBooleanExtra("orbita.profile", false)) {
+                    view.evaluateJavascript("window.OrbitaMeasurePerformance?.()", null);
+                }
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
@@ -123,7 +142,9 @@ public final class MainActivity extends ComponentActivity {
     private void initializeAds() {
         if (adsInitialized || !privacyBridge.canRequestAds()) return;
         adsInitialized = true;
-        MobileAds.initialize(this, status -> adMobBridge.startLoading());
+        new Thread(() -> MobileAds.initialize(getApplicationContext(), status -> runOnUiThread(() -> {
+            if (!isFinishing() && !isDestroyed()) adMobBridge.startLoading();
+        })), "orbita-ads-init").start();
     }
 
     private void openExternal(Uri uri) {

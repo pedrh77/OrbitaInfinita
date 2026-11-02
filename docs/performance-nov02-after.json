@@ -1,0 +1,5 @@
+{
+  "pid": "13737",
+  "logcat": "--------- beginning of main\n--------- beginning of system\n11-02 14:29:23.006 13737 13737 I OrbitaPerf: {\"state\":\"playing\",\"frames\":175,\"sampleMs\":5008.6,\"fps\":34.9,\"frameP50\":16.67,\"frameP95\":66.65,\"updateP95\":0.4,\"drawP95\":10.3,\"pixels\":1200276,\"dpr\":1.2617707324122316,\"width\":1098.2857666015625,\"height\":686.2857666015625,\"predictionSolves\":59,\"backgroundPaints\":135,\"planetBodyPaints\":11}\n11-02 14:29:31.891 13737 13737 I OrbitaPerf: {\"state\":\"over\",\"frames\":301,\"sampleMs\":5015.8,\"fps\":60,\"frameP50\":16.66,\"frameP95\":16.67,\"updateP95\":0.1,\"drawP95\":5.1,\"pixels\":1200276,\"dpr\":1.2617707324122316,\"width\":1098.2857666015625,\"height\":686.2857666015625,\"predictionSolves\":0,\"backgroundPaints\":75,\"planetBodyPaints\":0}\n",
+  "errors": "--------- beginning of main\n--------- beginning of system\n"
+}

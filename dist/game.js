@@ -3,7 +3,7 @@
 
   const shell = document.querySelector('#game-shell');
   const canvas = document.querySelector('#game');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false });
   const ui = {
     start: document.querySelector('#start-screen'), over: document.querySelector('#game-over'),
     shop: document.querySelector('#shop'), score: document.querySelector('#score'),
@@ -52,6 +52,51 @@
   let specialEvent = null;
   let runSeed = 0, random = Math.random;
   let audioCtx = null, musicTimer = null, musicStep = 0;
+  const STEP = 1 / 120, MAX_FRAME_TIME = .25;
+  let frameId = 0, accumulator = 0, appBackground = false;
+  let viewportW = 0, viewportH = 0, viewScale = 1, viewX = 0, viewY = 0, menuLayout = true;
+  let activePointer = null, backgroundGradient = null;
+  let trailSampleTime = 0;
+  const forceScratch = {}, positionScratch = {};
+  const glowSprites = new Map();
+  const planetBodies = new WeakMap();
+  const bodySprites = new Map();
+  const backgroundLayer = document.createElement('canvas');
+  const backgroundCtx = backgroundLayer.getContext('2d', { alpha: false });
+  let backgroundStamp = -Infinity, backgroundCamera = NaN;
+  const prediction = { points: new Float64Array(184 * 2), count: 0, outcome: 'open', stamp: -Infinity };
+  let perfSample = null;
+  // Opt-in local diagnostics, started by the Android debug build only. No network or player data.
+  window.OrbitaMeasurePerformance = () => {
+    perfSample = { start: performance.now(), state, intervals: [], update: [], draw: [], windows: 0,
+      predictions: 0, backgrounds: 0, bodies: 0 };
+  };
+
+  function resetPerformanceWindow(now = performance.now()) {
+    if (!perfSample) return;
+    perfSample.start = now; perfSample.state = state;
+    perfSample.intervals.length = perfSample.update.length = perfSample.draw.length = 0;
+    perfSample.predictions = perfSample.backgrounds = perfSample.bodies = 0;
+  }
+
+  function recordPerformance(elapsed, updateMs, drawMs, now) {
+    const sample = perfSample;
+    if (sample.state !== state) { resetPerformanceWindow(now); return; }
+    sample.intervals.push(elapsed * 1000); sample.update.push(updateMs); sample.draw.push(drawMs);
+    if (now - sample.start < 5000) return;
+    const percentile = (values, fraction) => {
+      values.sort((a, b) => a - b);
+      return +values[Math.min(values.length - 1, Math.floor(values.length * fraction))].toFixed(2);
+    };
+    console.info('[OrbitaPerf] ' + JSON.stringify({ state, frames: sample.intervals.length, sampleMs: +(now - sample.start).toFixed(1),
+      fps: +(sample.intervals.length * 1000 / (now - sample.start)).toFixed(1),
+      frameP50: percentile(sample.intervals, .5), frameP95: percentile(sample.intervals, .95),
+      updateP95: percentile(sample.update, .95), drawP95: percentile(sample.draw, .95),
+      pixels: canvas.width * canvas.height, dpr, width: W, height: H,
+      predictionSolves: sample.predictions, backgroundPaints: sample.backgrounds, planetBodyPaints: sample.bodies }));
+    if (++sample.windows === 3) perfSample = null;
+    else resetPerformanceWindow(now);
+  }
 
   function loadSave() {
     try { return { ...defaults, ...JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') }; }
@@ -60,9 +105,11 @@
   function persist() { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); syncUI(); }
   function syncUI() {
     ensureDailyMissions();
-    ui.best.textContent = save.best;
-    ui.coins.textContent = save.coins;
-    ui.shopCoins.textContent = save.coins;
+    const setText = (element, value) => { if (element.textContent !== String(value)) element.textContent = value; };
+    setText(ui.best, save.best); setText(ui.coins, save.coins); setText(ui.shopCoins, save.coins);
+    const soundButton = document.querySelector('#sound-button');
+    setText(soundButton, save.sound ? 'SOM LIGADO' : 'SOM DESLIGADO');
+    if (soundButton.getAttribute('aria-pressed') !== String(save.sound)) soundButton.setAttribute('aria-pressed', String(save.sound));
   }
 
   function buildMissionCatalog() {
@@ -118,39 +165,23 @@
 
   function resize() {
     shell.scrollTo(0, 0);
-    const previousW = W, previousH = H;
     const rect = canvas.getBoundingClientRect();
-    dpr = Math.min(devicePixelRatio || 1, 2);
-    W = Math.max(1, rect.width); H = Math.max(1, rect.height);
+    const width = Math.max(1, rect.width), height = Math.max(1, rect.height);
+    // Bound raster/compositing work on large screens; DOM controls keep native resolution.
+    const nextDpr = Math.min(devicePixelRatio || 1, 2, Math.sqrt(1200000 / (width * height)));
+    const isMenu = state === 'menu';
+    if (width === viewportW && height === viewportH && nextDpr === dpr && isMenu === menuLayout) return;
+    if (viewportW && (width !== viewportW || height !== viewportH)) pauseRun();
+    viewportW = width; viewportH = height; dpr = nextDpr; menuLayout = isMenu;
+    // Keep run coordinates and physics intact when rotating; fit the same world on screen.
+    if (!W || isMenu) { W = width; H = height; makeStars(); seedMenuWorld(); }
+    viewScale = Math.min(width / W, height / H);
+    viewX = (width - W * viewScale) / 2; viewY = (height - H * viewScale) / 2;
     safeBottom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-bottom')) || 0;
-    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (previousW && previousH && state !== 'menu' && current) reflowWorld(previousW, previousH);
-    makeStars();
-    if (state === 'menu') seedMenuWorld();
-  }
-
-  function reflowWorld(previousW, previousH) {
-    const scaleX = Math.min(1, W / previousW);
-    const anchorX = current.x;
-    const moveX = x => W * .5 + (x - anchorX) * scaleX;
-    const moveEntity = entity => { entity.x = moveX(entity.x); };
-    planets.forEach(p => {
-      moveEntity(p);
-      if (p.orbitMotion) p.orbitMotion.cx = moveX(p.orbitMotion.cx);
-    });
-    asteroids.forEach(moveEntity);
-    collectibles.forEach(moveEntity);
-    phenomena.forEach(moveEntity);
-    particles.forEach(moveEntity);
-    trail.forEach(moveEntity);
-    if (ship) {
-      moveEntity(ship);
-      ship.vx *= scaleX;
-    }
-    const currentScreenRatio = Math.max(.2, Math.min(.82, (current.y - cameraY) / previousH || .66));
-    cameraY = current.y - H * currentScreenRatio;
-    cameraTargetY = current.y - H * .66;
+    canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
+    ctx.setTransform(dpr * viewScale, 0, 0, dpr * viewScale, viewX * dpr, viewY * dpr);
+    backgroundGradient = null; backgroundStamp = -Infinity; prediction.stamp = -Infinity;
+    requestFrame();
   }
 
   function makeStars() {
@@ -162,6 +193,14 @@
       x: rnd() * W, y: rnd() * H, r: 90 + rnd() * 150,
       color: ['#713cff', '#1ba9c9', '#d73991', '#425fe0'][i], drift: .012 + rnd() * .02
     }));
+    for (const n of nebulae) {
+      n.sprite = document.createElement('canvas');
+      n.sprite.width = n.sprite.height = Math.ceil(n.r * 2);
+      const layer = n.sprite.getContext('2d');
+      const g = layer.createRadialGradient(n.r, n.r, 0, n.r, n.r, n.r);
+      g.addColorStop(0, `${n.color}22`); g.addColorStop(.48, `${n.color}0d`); g.addColorStop(1, `${n.color}00`);
+      layer.fillStyle = g; layer.fillRect(0, 0, n.sprite.width, n.sprite.height);
+    }
     comets = Array.from({ length: 3 }, (_, i) => makeComet(rnd, i * 2.7));
   }
 
@@ -219,6 +258,7 @@
 
   function begin() {
     document.activeElement?.blur(); shell.scrollTo(0, 0);
+    cancelAim();
     score = 0; streak = 0; continued = false; holding = false; charge = .35; runDust = 0; phaseCharges = 0; runShieldUsed = false; specialEvent = null;
     ui.eventBanner.hidden = true;
     cameraY = 0; cameraTargetY = 0; trail = []; particles = []; asteroids = []; collectibles = []; phenomena = [];
@@ -231,12 +271,14 @@
     ship = { x: 0, y: 0, vx: 0, vy: 0, aimAngle: -Math.PI / 2, orbitRadius: current.r + 19, mode: 'orbit' };
     placeOrbitShip();
     state = 'playing';
+    document.querySelector('#pause-screen').hidden = true;
     ui.start.classList.remove('active'); ui.over.classList.remove('active'); ui.shop.classList.remove('open');
     ui.quitConfirm.hidden = true; ui.quitButton.hidden = false;
     ui.score.textContent = '0';
     ui.sector.textContent = 'SETOR 01';
     ping(380, .06, 'sine');
     startMusic();
+    wakeLoop();
   }
 
   function spawnTargets() {
@@ -336,13 +378,12 @@
     p.y = p.orbitMotion.cy + Math.sin(p.orbitMotion.angle) * p.orbitMotion.radius;
   }
 
-  function futurePlanetPosition(p, seconds) {
-    if (!p.orbitMotion) return { x: p.x, y: p.y };
+  function futurePlanetPosition(p, seconds, result = {}) {
+    if (!p.orbitMotion) { result.x = p.x; result.y = p.y; return result; }
     const angle = p.orbitMotion.angle + p.orbitMotion.speed * seconds;
-    return {
-      x: p.orbitMotion.cx + Math.cos(angle) * p.orbitMotion.radius,
-      y: p.orbitMotion.cy + Math.sin(angle) * p.orbitMotion.radius
-    };
+    result.x = p.orbitMotion.cx + Math.cos(angle) * p.orbitMotion.radius;
+    result.y = p.orbitMotion.cy + Math.sin(angle) * p.orbitMotion.radius;
+    return result;
   }
 
   function gravityRange(p) {
@@ -350,44 +391,79 @@
     return 190 + p.r * 3.4;
   }
 
-  function gravityVector(p, x, y, seconds = 0) {
+  function gravityVector(p, x, y, seconds = 0, result = {}) {
+    result.ax = result.ay = 0;
     const range = gravityRange(p);
-    if (!range) return { ax: 0, ay: 0 };
-    const future = futurePlanetPosition(p, seconds);
+    if (!range) return result;
+    const future = futurePlanetPosition(p, seconds, positionScratch);
     const dx = future.x - x, dy = future.y - y, distance = Math.max(1, Math.hypot(dx, dy));
-    if (distance >= range) return { ax: 0, ay: 0 };
+    if (distance >= range) return result;
     const proximity = 1 - distance / range;
     const smoothInfluence = proximity * proximity * (3 - 2 * proximity);
     const mass = p.hazard ? Math.abs(p.gravity) : 850000 * (.72 + p.r / 52);
     const polarity = p.hazard && p.gravity < 0 ? -1 : 1;
     const strength = Math.min(p.hazard ? 135 : 190, mass / (distance * distance + 1200) * smoothInfluence) * polarity;
-    return { ax: dx / distance * strength, ay: dy / distance * strength };
+    result.ax = dx / distance * strength; result.ay = dy / distance * strength;
+    return result;
+  }
+
+  // One integrator for the real flight and its preview. This never consumes items.
+  function advanceFlight(body, dt, seconds = 0) {
+    let ax = 0, ay = 0;
+    for (const p of planets) {
+      const force = gravityVector(p, body.x, body.y, seconds, forceScratch);
+      ax += force.ax; ay += force.ay;
+    }
+    body.vx += ax * dt; body.vy += ay * dt;
+    for (const f of phenomena) {
+      if (f.used) continue;
+      const dx = body.x - f.x, dy = body.y - f.y, distance = Math.hypot(dx, dy);
+      if (distance >= f.r) continue;
+      if (f.type === 'nebula') {
+        const drag = Math.exp(-.65 * dt);
+        body.vx *= drag; body.vy *= drag;
+      } else if (distance >= 1 && (f.type === 'gravityRift' || f.type === 'solarWind')) {
+        const strength = (1 - distance / f.r) * (f.type === 'gravityRift' ? 165 : 115);
+        if (f.type === 'gravityRift') {
+          body.vx -= dy / distance * strength * dt * f.direction;
+          body.vy += dx / distance * strength * dt * f.direction;
+        } else body.vx += strength * dt * f.direction;
+      }
+    }
+    body.x += body.vx * dt; body.y += body.vy * dt;
+  }
+
+  function pointerKey(e) { return Number.isFinite(e?.pointerId) ? e.pointerId : 'keyboard'; }
+  function inputPoint(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: (e.clientX - rect.left - viewX) / viewScale, y: (e.clientY - rect.top - viewY) / viewScale };
   }
 
   function press(e) {
-    if (state !== 'playing' || ship.mode !== 'orbit' || ui.shop.classList.contains('open')) return;
+    if (holding || state !== 'playing' || ship.mode !== 'orbit' || ui.shop.classList.contains('open')) return;
     if (e?.cancelable) e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
+    const point = inputPoint(e);
+    activePointer = pointerKey(e);
     holding = true; charge = .25; ship.aimAngle = -Math.PI / 2;
     if (Number.isFinite(e?.pointerId)) canvas.setPointerCapture?.(e.pointerId);
-    aimStartX = Number.isFinite(e?.clientX) ? e.clientX - rect.left : ship.x;
-    aimStartY = Number.isFinite(e?.clientY) ? e.clientY - rect.top : ship.y - cameraY;
+    aimStartX = Number.isFinite(e?.clientX) ? point.x : ship.x;
+    aimStartY = Number.isFinite(e?.clientY) ? point.y : ship.y - cameraY;
+    prediction.stamp = -Infinity;
     ping(230, .025, 'sine');
   }
   function aim(e) {
-    if (!holding || state !== 'playing' || ship.mode !== 'orbit') return;
+    if (!holding || pointerKey(e) !== activePointer || state !== 'playing' || ship.mode !== 'orbit') return;
     if (e?.cancelable) e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    const { x, y } = inputPoint(e);
     const dx = x - aimStartX, dy = y - aimStartY, distance = Math.hypot(dx, dy);
     if (distance > 7) ship.aimAngle = Math.atan2(dy, dx);
     charge = Math.max(.2, Math.min(1, distance / Math.min(190, W * .42)));
+    // Keep the latest input immediately, but let the preview use its 50 ms budget.
   }
   function release(e) {
-    if (!holding || state !== 'playing' || ship.mode !== 'orbit') return;
+    if (!holding || pointerKey(e) !== activePointer || state !== 'playing' || ship.mode !== 'orbit') return;
     if (e?.cancelable) e.preventDefault();
-    holding = false;
-    if (Number.isFinite(e?.pointerId) && canvas.hasPointerCapture?.(e.pointerId)) canvas.releasePointerCapture?.(e.pointerId);
+    cancelAim();
     const tangent = ship.aimAngle;
     const boost = save.boosters > 0 ? 1.15 : 1;
     const speed = (255 + charge * 290) * boost;
@@ -395,6 +471,7 @@
     ship.vx = Math.cos(tangent) * speed;
     ship.vy = Math.sin(tangent) * speed;
     ship.mode = 'flight'; trail = [];
+    trailSampleTime = 0;
     burst(ship.x, ship.y, skinColor(), 9, 100);
     ping(520, .07, 'triangle');
   }
@@ -409,7 +486,6 @@
     }
     if (state === 'over') { updateParticles(dt); return; }
     if (state !== 'playing') return;
-    updateSpecialEvent();
     const cameraDelta = cameraTargetY - cameraY;
     cameraY += cameraDelta * Math.min(1, worldDt * 3.5);
     if (Math.abs(cameraDelta) < .35) cameraY = cameraTargetY;
@@ -422,31 +498,13 @@
     if (ship.mode === 'orbit') {
       placeOrbitShip();
     } else if (ship.mode === 'flight') {
-      let ax = 0, ay = 0;
-      for (const p of planets) {
-        const force = gravityVector(p, ship.x, ship.y);
-        ax += force.ax; ay += force.ay;
+      advanceFlight(ship, dt);
+      trailSampleTime += dt;
+      if (trailSampleTime + 1e-10 >= 1 / 60) {
+        trailSampleTime = Math.max(0, trailSampleTime - 1 / 60);
+        trail.push({ x: ship.x, y: ship.y, life: 1 });
+        if (trail.length > 34) trail.shift();
       }
-      ship.vx += ax * dt; ship.vy += ay * dt;
-      for (const f of phenomena) if (!f.used && f.type === 'nebula' && Math.hypot(ship.x - f.x, ship.y - f.y) < f.r) {
-        const drag = Math.max(.985, 1 - dt * .65);
-        ship.vx *= drag; ship.vy *= drag;
-      }
-      for (const f of phenomena) {
-        if (f.used || !['gravityRift', 'solarWind'].includes(f.type)) continue;
-        const dx = ship.x - f.x, dy = ship.y - f.y, distance = Math.hypot(dx, dy);
-        if (distance >= f.r || distance < 1) continue;
-        const strength = (1 - distance / f.r) * (f.type === 'gravityRift' ? 165 : 115);
-        if (f.type === 'gravityRift') {
-          ship.vx += -dy / distance * strength * dt * f.direction;
-          ship.vy += dx / distance * strength * dt * f.direction;
-        } else {
-          ship.vx += strength * dt * f.direction;
-        }
-      }
-      ship.x += ship.vx * dt; ship.y += ship.vy * dt;
-      trail.push({ x: ship.x, y: ship.y, life: 1 });
-      if (trail.length > 34) trail.shift();
       trail.forEach(t => t.life -= dt * 1.8);
       checkCollisions();
       const sy = ship.y - cameraY;
@@ -504,9 +562,9 @@
     return true;
   }
 
-  function updateSpecialEvent() {
+  function updateSpecialEvent(dt) {
     if (!specialEvent) return;
-    const remaining = Math.max(0, specialEvent.deadline - performance.now());
+    const remaining = specialEvent.remaining = Math.max(0, specialEvent.remaining - dt * 1000);
     ui.eventTimer.textContent = `${(remaining / 1000).toFixed(1)}s`;
     if (remaining > 0) return;
     specialEvent = null; ui.eventBanner.hidden = true; ping(150, .14, 'sawtooth'); toast('CORRIDA ENCERRADA · CONTINUE A VIAGEM');
@@ -521,7 +579,7 @@
     }
     const sector = score + 1;
     if (sector % 10 !== 0) return;
-    specialEvent = { deadline: performance.now() + 18000, targetScore: score + 3, reward: 100 + sector / 10 * 25 };
+    specialEvent = { remaining: 18000, targetScore: score + 3, reward: 100 + sector / 10 * 25 };
     ui.eventTimer.textContent = '18.0s'; ui.eventBanner.hidden = false; ping(880, .12, 'square'); toast('EVENTO: POUSE EM 3 PLANETAS EM 18 SEGUNDOS');
   }
 
@@ -540,6 +598,7 @@
     ui.sector.textContent = `SETOR ${String(score + 1).padStart(2, '0')}`;
     p.target = false; p.visited = true; p.orbitMotion = null; current = p;
     ship.mode = 'orbit'; ship.orbitRadius = current.r + 19;
+    prediction.stamp = -Infinity;
     ship.aimAngle = -Math.PI / 2;
     charge = .35;
     cameraTargetY = current.y - H * .66;
@@ -557,6 +616,7 @@
     if (state !== 'playing') return;
     if (save.shields > 0) {
       save.shields -= 1; runShieldUsed = true; persist(); holding = false; ship.mode = 'orbit'; ship.vx = ship.vy = 0; ship.aimAngle = -Math.PI / 2; placeOrbitShip();
+      prediction.stamp = -Infinity;
       burst(current.x, current.y, '#6ee7ff', 26, 150); ping(820, .12, 'sine'); toast('ESCUDO DE EMERGÊNCIA ATIVADO'); return;
     }
     state = 'over'; holding = false; specialEvent = null; ui.eventBanner.hidden = true; save.runs += 1; persist();
@@ -576,20 +636,21 @@
 
   async function continueRun() {
     ui.continueButton.disabled = true;
-    const ad = await window.OrbitaAds.showRewarded('continue-run');
+    const ad = await rewardedAd('continue-run');
     ui.continueButton.disabled = false;
-    if (!ad.rewarded) return toast(ad.unavailable ? 'Recompensa disponível no app Android.' : 'Assista até o fim para receber a recompensa.');
+    if (!ad.rewarded) return toast(rewardFailure(ad));
     continued = true; ui.over.classList.remove('active'); state = 'playing';
     ui.quitButton.hidden = false; startMusic();
     ship.mode = 'orbit'; ship.aimAngle = -Math.PI / 2; ship.vx = ship.vy = 0; placeOrbitShip();
     toast('Sinal recuperado!'); ping(620, .12, 'sine');
+    wakeLoop();
   }
 
   function restart() { begin(); }
 
   function openQuitConfirm() {
     if (state !== 'playing') return;
-    holding = false; state = 'paused'; stopMusic();
+    cancelAim(); state = 'paused'; stopMusic(); stopLoop(); requestFrame();
     const penalty = Math.floor(runDust * .3);
     ui.quitCopy.textContent = penalty > 0
       ? `Você conquistou ✦ ${runDust} nesta rodada e perderá ✦ ${penalty}.`
@@ -599,7 +660,7 @@
 
   function cancelQuit() {
     if (state !== 'paused') return;
-    ui.quitConfirm.hidden = true; state = 'playing'; startMusic();
+    ui.quitConfirm.hidden = true; state = 'playing'; startMusic(); wakeLoop();
   }
 
   function confirmQuit() {
@@ -610,6 +671,7 @@
     ui.final.textContent = score;
     ui.result.textContent = penalty ? `Viagem encerrada. Você perdeu ✦ ${penalty}.` : 'Viagem encerrada sem perda de poeira.';
     ui.continueButton.style.display = 'none'; ui.over.classList.add('active');
+    wakeLoop();
   }
 
   function burst(x, y, color, count, speed) {
@@ -619,8 +681,15 @@
     }
   }
   function updateParticles(dt) {
-    particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .985; p.vy *= .985; p.life -= dt; });
-    particles = particles.filter(p => p.life > 0);
+    const drag = Math.pow(.985, dt * 60);
+    let alive = 0;
+    for (const p of particles) {
+      p.life -= dt;
+      if (p.life <= 0) continue;
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= drag; p.vy *= drag;
+      particles[alive++] = p;
+    }
+    particles.length = alive;
   }
 
   function updateSpace(dt) {
@@ -633,46 +702,70 @@
   }
 
   function draw(time) {
-    ctx.clearRect(0, 0, W, H);
-    const grad = ctx.createRadialGradient(W * .5, H * .32, 0, W * .5, H * .35, H * .9);
-    grad.addColorStop(0, '#171944'); grad.addColorStop(.58, '#090b23'); grad.addColorStop(1, '#050615');
-    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
-    drawNebulae(time);
-    drawStars(time);
+    ctx.fillStyle = '#07091a';
+    ctx.fillRect(-viewX / viewScale, -viewY / viewScale, viewportW / viewScale, viewportH / viewScale);
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+    drawBackground(time);
     drawComets();
     ctx.save();
     ctx.translate(0, -cameraY);
-    phenomena.filter(f => f.type === 'nebula').forEach(drawPhenomenon);
+    for (const f of phenomena) if (f.type === 'nebula') drawPhenomenon(f);
     planets.forEach(drawPlanet);
     asteroids.forEach(drawAsteroid);
     collectibles.forEach(drawCollectible);
-    phenomena.filter(f => f.type !== 'nebula').forEach(drawPhenomenon);
+    for (const f of phenomena) if (f.type !== 'nebula') drawPhenomenon(f);
     drawParticles();
-    if ((state === 'playing' || state === 'over') && ship) drawShip();
+    if (state !== 'menu' && ship) drawShip();
     ctx.restore();
     if (state === 'playing' && holding) drawCharge();
-  }
-
-  function drawStars(time) {
-    ctx.save();
-    for (const s of stars) {
-      const y = ((s.y - cameraY * .12) % H + H) % H;
-      ctx.globalAlpha = s.a * (.75 + Math.sin(time * .0015 + s.p) * .25);
-      ctx.fillStyle = '#dfe5ff'; ctx.beginPath(); ctx.arc(s.x, y, s.r, 0, TAU); ctx.fill();
-    }
     ctx.restore();
   }
 
-  function drawNebulae(time) {
-    ctx.save(); ctx.globalCompositeOperation = 'screen';
+  function drawBackground(time) {
+    const density = Math.min(1, dpr * viewScale);
+    const width = Math.max(1, Math.round(W * density)), height = Math.max(1, Math.round(H * density));
+    if (backgroundLayer.width !== width || backgroundLayer.height !== height) {
+      backgroundLayer.width = width; backgroundLayer.height = height;
+      backgroundCtx.setTransform(width / W, 0, 0, height / H, 0, 0);
+      backgroundGradient = null; backgroundStamp = -Infinity;
+    }
+    // Twinkle/drift are slow. Preserve full-rate parallax whenever the camera moves.
+    if (time - backgroundStamp >= 50 || cameraY !== backgroundCamera) {
+      if (perfSample) perfSample.backgrounds++;
+      if (!backgroundGradient) {
+        backgroundGradient = backgroundCtx.createRadialGradient(W * .5, H * .32, 0, W * .5, H * .35, H * .9);
+        backgroundGradient.addColorStop(0, '#171944'); backgroundGradient.addColorStop(.58, '#090b23'); backgroundGradient.addColorStop(1, '#050615');
+      }
+      backgroundCtx.fillStyle = backgroundGradient; backgroundCtx.fillRect(0, 0, W, H);
+      drawNebulae(time, backgroundCtx); drawStars(time, backgroundCtx);
+      backgroundStamp = time; backgroundCamera = cameraY;
+    }
+    ctx.drawImage(backgroundLayer, 0, 0, W, H);
+  }
+
+  function inCamera(entity, radius) {
+    const y = entity.y - cameraY;
+    return entity.x + radius >= 0 && entity.x - radius <= W && y + radius >= 0 && y - radius <= H;
+  }
+
+  function drawStars(time, target = ctx) {
+    target.save();
+    for (const s of stars) {
+      const y = ((s.y - cameraY * .12) % H + H) % H;
+      target.globalAlpha = s.a * (.75 + Math.sin(time * .0015 + s.p) * .25);
+      target.fillStyle = '#dfe5ff'; target.beginPath(); target.arc(s.x, y, s.r, 0, TAU); target.fill();
+    }
+    target.restore();
+  }
+
+  function drawNebulae(time, target = ctx) {
+    target.save(); target.globalCompositeOperation = 'screen';
     for (const n of nebulae) {
       const x = n.x + Math.sin(time * n.drift * .001) * 28;
       const y = ((n.y - cameraY * .035) % (H + n.r * 2) + H + n.r * 2) % (H + n.r * 2) - n.r;
-      const g = ctx.createRadialGradient(x, y, 0, x, y, n.r);
-      g.addColorStop(0, `${n.color}22`); g.addColorStop(.48, `${n.color}0d`); g.addColorStop(1, `${n.color}00`);
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, n.r, 0, TAU); ctx.fill();
+      if (x + n.r >= 0 && x - n.r <= W && y + n.r >= 0 && y - n.r <= H) target.drawImage(n.sprite, x - n.r, y - n.r);
     }
-    ctx.restore();
+    target.restore();
   }
 
   function drawComets() {
@@ -688,8 +781,56 @@
     ctx.restore();
   }
 
+  function drawGlow(x, y, radius, color, blur = 16, strength = 1) {
+    const core = Math.ceil(radius / 2) * 2, spread = Math.ceil(blur / 4) * 4;
+    const key = `${core}:${spread}:${color}`;
+    let sprite = glowSprites.get(key);
+    if (!sprite) {
+      const extent = core + spread * 2;
+      sprite = document.createElement('canvas'); sprite.width = sprite.height = extent * 2;
+      const layer = sprite.getContext('2d');
+      const solid = /^#[0-9a-f]{6}$/i.test(color) ? color : '#ffffff';
+      const g = layer.createRadialGradient(extent, extent, core * .7, extent, extent, extent);
+      g.addColorStop(0, `${solid}66`); g.addColorStop(.3, `${solid}33`); g.addColorStop(1, `${solid}00`);
+      layer.fillStyle = g; layer.fillRect(0, 0, sprite.width, sprite.height);
+      // Bounded across an infinite run; colours/radii from old sectors cannot accumulate.
+      if (glowSprites.size >= 48) glowSprites.delete(glowSprites.keys().next().value);
+      glowSprites.set(key, sprite);
+    }
+    ctx.save(); ctx.globalAlpha *= strength;
+    ctx.drawImage(sprite, x - sprite.width / 2, y - sprite.height / 2); ctx.restore();
+  }
+
+  function planetBody(p) {
+    let body = planetBodies.get(p);
+    if (body) return body;
+    const radius = Math.ceil(p.r / 2) * 2;
+    const variant = p.hazard ? (p.hazardType === 'pulsar' ? 'pulsar' : 'hazard') : p.color;
+    const key = `${radius}:${variant}`;
+    body = bodySprites.get(key);
+    if (body) {
+      bodySprites.delete(key); bodySprites.set(key, body);
+      planetBodies.set(p, body); return body;
+    }
+    if (perfSample) perfSample.bodies++;
+    const size = radius * 2 + 2;
+    const sprite = document.createElement('canvas'); sprite.width = sprite.height = Math.ceil(size * 1.5);
+    const layer = sprite.getContext('2d');
+    layer.setTransform(sprite.width / size, 0, 0, sprite.height / size, 0, 0);
+    const center = size / 2;
+    const g = layer.createRadialGradient(center - radius * .34, center - radius * .38, radius * .05, center, center, radius);
+    if (p.hazardType === 'pulsar') { g.addColorStop(0, '#ffffff'); g.addColorStop(.22, '#9cf4ff'); g.addColorStop(.62, '#256fa8'); g.addColorStop(1, '#07152d'); }
+    else if (p.hazard) { g.addColorStop(0, '#171a2f'); g.addColorStop(.75, '#03040b'); g.addColorStop(1, '#000'); }
+    else { g.addColorStop(0, tint(p.color, 62)); g.addColorStop(.44, p.color); g.addColorStop(1, tint(p.color, -48)); }
+    layer.fillStyle = g; layer.beginPath(); layer.arc(center, center, radius, 0, TAU); layer.fill();
+    body = { sprite, radius, size };
+    if (bodySprites.size >= 64) bodySprites.delete(bodySprites.keys().next().value);
+    bodySprites.set(key, body); planetBodies.set(p, body);
+    return body;
+  }
+
   function drawPlanet(p) {
-    const glow = p.target ? 15 + Math.sin(p.pulse * 3) * 5 : p.hazard ? 24 : 8;
+    if (!inCamera(p, Math.max(p.r * 5, p.r + 64))) return;
     ctx.save();
     if (!p.hazard && ship && state === 'playing') {
       const range = gravityRange(p), distance = Math.hypot(ship.x - p.x, ship.y - p.y);
@@ -709,13 +850,9 @@
       ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * 2.25, p.r * .68, -.18, 0, TAU); ctx.stroke();
       ctx.globalAlpha = .06; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * 2.8, p.r * .92, -.18, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
     }
-    ctx.shadowColor = p.color; ctx.shadowBlur = glow;
-    const g = ctx.createRadialGradient(p.x - p.r * .34, p.y - p.r * .38, p.r * .05, p.x, p.y, p.r);
-    if (p.hazardType === 'pulsar') { g.addColorStop(0, '#ffffff'); g.addColorStop(.22, '#9cf4ff'); g.addColorStop(.62, '#256fa8'); g.addColorStop(1, '#07152d'); }
-    else if (p.hazard) { g.addColorStop(0, '#171a2f'); g.addColorStop(.75, '#03040b'); g.addColorStop(1, '#000'); }
-    else { g.addColorStop(0, tint(p.color, 62)); g.addColorStop(.44, p.color); g.addColorStop(1, tint(p.color, -48)); }
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
-    ctx.shadowBlur = 0;
+    drawGlow(p.x, p.y, p.r, p.color, p.hazard ? 24 : 16, p.target ? .8 + Math.sin(p.pulse * 3) * .2 : .65);
+    const body = planetBody(p), size = body.size * p.r / body.radius;
+    ctx.drawImage(body.sprite, p.x - size / 2, p.y - size / 2, size, size);
     if (!p.hazard) {
       if (p.style === 2) {
         ctx.save();
@@ -741,7 +878,7 @@
         ctx.restore();
       } else if (p.style === 4) {
         ctx.save(); ctx.beginPath(); ctx.arc(p.x, p.y, p.r - 1, 0, TAU); ctx.clip();
-        ctx.globalAlpha = .75; ctx.strokeStyle = '#ffb24d'; ctx.shadowColor = '#ff5c35'; ctx.shadowBlur = 7; ctx.lineWidth = Math.max(1, p.r * .055);
+        ctx.globalAlpha = .75; ctx.strokeStyle = '#ffb24d'; ctx.lineWidth = Math.max(1, p.r * .055);
         for (let i = 0; i < 4; i++) {
           const a = p.seed * .3 + i * 1.55;
           ctx.beginPath(); ctx.moveTo(p.x + Math.cos(a) * p.r * .12, p.y + Math.sin(a) * p.r * .12); ctx.lineTo(p.x + Math.cos(a + .25) * p.r * .52, p.y + Math.sin(a + .25) * p.r * .52); ctx.lineTo(p.x + Math.cos(a - .08) * p.r, p.y + Math.sin(a - .08) * p.r); ctx.stroke();
@@ -786,13 +923,14 @@
     if (!p.hazard && p.style === 0) {
       const moonA = p.pulse * .55 + p.seed;
       const mx = p.x + Math.cos(moonA) * p.r * 1.65, my = p.y + Math.sin(moonA) * p.r * .7;
-      ctx.globalAlpha = .85; ctx.fillStyle = '#dbe2ff'; ctx.shadowColor = '#9eb3ff'; ctx.shadowBlur = 7;
+      ctx.globalAlpha = .85; ctx.fillStyle = '#dbe2ff'; drawGlow(mx, my, Math.max(2.5, p.r * .11), '#9eb3ff', 8);
       ctx.beginPath(); ctx.arc(mx, my, Math.max(2.5, p.r * .11), 0, TAU); ctx.fill();
     }
     ctx.restore();
   }
 
   function drawAsteroid(a) {
+    if (!inCamera(a, a.r + 2)) return;
     ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(a.rotation); ctx.fillStyle = '#5e6178'; ctx.strokeStyle = '#949ab7'; ctx.lineWidth = 1;
     ctx.beginPath();
     for (let i = 0; i < 8; i++) {
@@ -805,9 +943,9 @@
   }
 
   function drawCollectible(c) {
-    if (c.collected) return;
+    if (c.collected || !inCamera(c, c.r * 1.2 + 64)) return;
     const pulse = 1 + Math.sin(c.pulse) * .18;
-    ctx.save(); ctx.translate(c.x, c.y); ctx.scale(pulse, pulse); ctx.rotate(c.pulse * .18); ctx.shadowColor = '#ffcf5c'; ctx.shadowBlur = 18; ctx.fillStyle = '#ffcf5c';
+    ctx.save(); ctx.translate(c.x, c.y); ctx.scale(pulse, pulse); ctx.rotate(c.pulse * .18); drawGlow(0, 0, c.r, '#ffcf5c', 18); ctx.fillStyle = '#ffcf5c';
     ctx.beginPath();
     for (let i = 0; i < 8; i++) {
       const a = -Math.PI / 2 + i * Math.PI / 4, r = i % 2 ? c.r * .42 : c.r;
@@ -817,7 +955,7 @@
   }
 
   function drawPhenomenon(f) {
-    if (f.used) return;
+    if (f.used || !inCamera(f, f.r * 1.4 + 64)) return;
     ctx.save(); ctx.translate(f.x, f.y);
     if (f.type === 'nebula') {
       const g = ctx.createRadialGradient(0, 0, 2, 0, 0, f.r);
@@ -826,27 +964,27 @@
       ctx.globalAlpha = .2; ctx.strokeStyle = '#b49cff'; ctx.setLineDash([3, 8]); ctx.beginPath(); ctx.arc(0, 0, f.r * .82, 0, TAU); ctx.stroke();
     } else if (f.type === 'shieldOrb') {
       const scale = 1 + Math.sin(f.pulse) * .08; ctx.scale(scale, scale);
-      ctx.shadowColor = '#6ee7ff'; ctx.shadowBlur = 18; ctx.fillStyle = '#6ee7ff35'; ctx.strokeStyle = '#9cf4ff'; ctx.lineWidth = 2;
+      drawGlow(0, 0, f.r, '#6ee7ff', 18); ctx.fillStyle = '#6ee7ff35'; ctx.strokeStyle = '#9cf4ff'; ctx.lineWidth = 2;
       ctx.beginPath();
       for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + i * TAU / 6; i ? ctx.lineTo(Math.cos(a) * f.r, Math.sin(a) * f.r) : ctx.moveTo(Math.cos(a) * f.r, Math.sin(a) * f.r); }
       ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.beginPath(); ctx.arc(0, 0, f.r * .38, 0, TAU); ctx.stroke();
     } else if (f.type === 'boostGate') {
-      ctx.rotate(f.pulse * .35); ctx.shadowColor = '#ffcf5c'; ctx.shadowBlur = 16; ctx.strokeStyle = '#ffcf5c'; ctx.lineWidth = 3;
+      ctx.rotate(f.pulse * .35); drawGlow(0, 0, f.r, '#ffcf5c', 16); ctx.strokeStyle = '#ffcf5c'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(0, 0, f.r, -.3, Math.PI + .3); ctx.stroke();
       ctx.globalAlpha = .45; ctx.beginPath(); ctx.arc(0, 0, f.r * .65, Math.PI - .3, TAU + .3); ctx.stroke();
     } else if (f.type === 'phaseOrb') {
-      ctx.rotate(-f.pulse * .28); ctx.shadowColor = '#c894ff'; ctx.shadowBlur = 20; ctx.strokeStyle = '#e6c8ff'; ctx.lineWidth = 2;
+      ctx.rotate(-f.pulse * .28); drawGlow(0, 0, f.r, '#c894ff', 20); ctx.strokeStyle = '#e6c8ff'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(0, 0, f.r, 0, TAU); ctx.stroke();
       ctx.globalAlpha = .7; ctx.beginPath(); ctx.arc(0, 0, f.r * .48, 0, TAU); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(-f.r * .8, 0); ctx.lineTo(f.r * .8, 0); ctx.stroke();
     } else if (f.type === 'starCache') {
-      ctx.rotate(f.pulse * .22); ctx.shadowColor = '#ffcf5c'; ctx.shadowBlur = 22; ctx.fillStyle = '#ffcf5c';
+      ctx.rotate(f.pulse * .22); drawGlow(0, 0, f.r, '#ffcf5c', 22); ctx.fillStyle = '#ffcf5c';
       ctx.beginPath();
       for (let i = 0; i < 12; i++) { const a = -Math.PI / 2 + i * TAU / 12, r = i % 2 ? f.r * .42 : f.r; i ? ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
       ctx.closePath(); ctx.fill();
     } else if (f.type === 'gravityRift') {
-      ctx.rotate(f.pulse * .18 * f.direction); ctx.globalAlpha = .72; ctx.strokeStyle = '#c081ff'; ctx.shadowColor = '#7c5cff'; ctx.shadowBlur = 18;
+      ctx.rotate(f.pulse * .18 * f.direction); ctx.globalAlpha = .72; ctx.strokeStyle = '#c081ff'; drawGlow(0, 0, f.r, '#7c5cff', 18);
       for (let i = 0; i < 3; i++) {
         ctx.lineWidth = 2 - i * .4; ctx.beginPath(); ctx.arc(0, 0, f.r * (.34 + i * .24), i * 1.1, i * 1.1 + Math.PI * 1.45); ctx.stroke();
       }
@@ -859,7 +997,7 @@
         ctx.beginPath(); ctx.moveTo(-f.r * f.direction, y); ctx.quadraticCurveTo(0, y - 7 * f.direction, f.r * f.direction, y); ctx.stroke();
       }
     } else if (f.type === 'mine') {
-      ctx.rotate(f.pulse * .18); ctx.shadowColor = '#ff4f91'; ctx.shadowBlur = 18; ctx.fillStyle = '#ff4f91'; ctx.strokeStyle = '#ff9fc1';
+      ctx.rotate(f.pulse * .18); drawGlow(0, 0, f.r, '#ff4f91', 18); ctx.fillStyle = '#ff4f91'; ctx.strokeStyle = '#ff9fc1';
       ctx.beginPath();
       for (let i = 0; i < 16; i++) { const a = i * TAU / 16, r = i % 2 ? f.r * .55 : f.r * (1.25 + Math.sin(f.pulse) * .12); i ? ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
       ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -878,64 +1016,81 @@
       ctx.restore();
     }
     const angle = ship.mode === 'flight' ? Math.atan2(ship.vy, ship.vx) + Math.PI / 2 : ship.aimAngle + Math.PI / 2;
-    ctx.save(); ctx.translate(ship.x, ship.y); ctx.rotate(angle); ctx.shadowColor = skinColor(); ctx.shadowBlur = 14; ctx.fillStyle = skinColor();
+    ctx.save(); ctx.translate(ship.x, ship.y); ctx.rotate(angle); drawGlow(0, 0, 12, skinColor(), 14); ctx.fillStyle = skinColor();
     ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(7, 8); ctx.lineTo(2, 6); ctx.lineTo(0, 12); ctx.lineTo(-2, 6); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill();
     ctx.shadowBlur = 0; ctx.fillStyle = '#151933'; ctx.beginPath(); ctx.arc(0, -2, 2.8, 0, TAU); ctx.fill();
     if (phaseCharges > 0) {
-      ctx.globalAlpha = .72; ctx.strokeStyle = '#d9adff'; ctx.lineWidth = 1.6; ctx.shadowColor = '#c894ff'; ctx.shadowBlur = 12;
+      ctx.globalAlpha = .72; ctx.strokeStyle = '#d9adff'; ctx.lineWidth = 1.6; drawGlow(0, 0, 15, '#c894ff', 12);
       ctx.beginPath(); ctx.arc(0, 0, 15 + Math.sin(performance.now() * .008) * 1.5, 0, TAU); ctx.stroke();
     }
     ctx.restore();
     if (ship.mode === 'orbit') drawPrediction();
   }
 
-  function drawPrediction() {
-    const tangent = ship.aimAngle;
-    const previewCharge = charge;
-    const speed = (255 + previewCharge * 290) * (save.boosters > 0 ? 1.15 : 1);
-    let x = ship.x, y = ship.y, vx = Math.cos(tangent) * speed, vy = Math.sin(tangent) * speed;
-    const points = [], previewBoosts = new Set(); let outcome = 'open';
-    for (let i = 0; i < 92; i++) {
-      const step = .017; let ax = 0, ay = 0;
+  function tracePrediction() {
+    if (perfSample) perfSample.predictions++;
+    const speed = (255 + charge * 290) * (save.boosters > 0 ? 1.15 : 1);
+    const body = { x: ship.x, y: ship.y, vx: Math.cos(ship.aimAngle) * speed, vy: Math.sin(ship.aimAngle) * speed };
+    const previewBoosts = new Set();
+    prediction.count = 0; prediction.outcome = 'open';
+    for (let i = 0; i < 184; i++) {
+      const seconds = (i + 1) * STEP;
+      advanceFlight(body, STEP, seconds);
+      prediction.points[i * 2] = body.x; prediction.points[i * 2 + 1] = body.y;
+      prediction.count++;
       for (const p of planets) {
-        const force = gravityVector(p, x, y, (i + 1) * step);
-        ax += force.ax; ay += force.ay;
+        const future = futurePlanetPosition(p, seconds, positionScratch);
+        if (Math.hypot(body.x - future.x, body.y - future.y) < p.r + 8) {
+          prediction.outcome = p.target ? 'safe' : 'danger'; break;
+        }
       }
-      vx += ax * step; vy += ay * step;
-      for (const f of phenomena) if (!f.used && f.type === 'nebula' && Math.hypot(x - f.x, y - f.y) < f.r) {
-        const drag = Math.max(.985, 1 - step * .65); vx *= drag; vy *= drag;
+      if (prediction.outcome === 'open') for (const a of asteroids) {
+        if (Math.hypot(body.x - a.x, body.y - a.y) < a.r + 7) { prediction.outcome = 'danger'; break; }
       }
-      x += vx * step; y += vy * step; points.push({ x, y });
-      for (const f of phenomena) if (!f.used && f.type === 'boostGate' && !previewBoosts.has(f) && Math.hypot(x - f.x, y - f.y) < f.r + 8) {
-        previewBoosts.add(f); vx *= 1.18; vy *= 1.18;
+      if (prediction.outcome !== 'open') break;
+      for (const f of phenomena) {
+        if (f.used || Math.hypot(body.x - f.x, body.y - f.y) >= f.r + 8) continue;
+        if (f.type === 'mine') { prediction.outcome = 'danger'; break; }
+        if (f.type === 'boostGate' && !previewBoosts.has(f)) {
+          previewBoosts.add(f); body.vx *= 1.18; body.vy *= 1.18;
+        }
       }
-      for (const p of planets) {
-        const future = futurePlanetPosition(p, (i + 1) * step);
-        if (Math.hypot(x - future.x, y - future.y) < p.r + 7) { outcome = p.target ? 'safe' : 'danger'; break; }
-      }
-      if (outcome === 'open') for (const a of asteroids) {
-        if (Math.hypot(x - a.x, y - a.y) < a.r + 7) { outcome = 'danger'; break; }
-      }
-      if (outcome === 'open') for (const f of phenomena) {
-        if (!f.used && f.type === 'mine' && Math.hypot(x - f.x, y - f.y) < f.r + 8) { outcome = 'danger'; break; }
-      }
-      if (outcome !== 'open') break;
+      if (prediction.outcome !== 'open') break;
     }
-    const routeColor = outcome === 'safe' ? '#70f0aa' : outcome === 'danger' ? '#c081ff' : '#6ee7ff';
+    prediction.path = typeof Path2D === 'function' ? new Path2D() : null;
+    if (prediction.path) buildPredictionPath(prediction.path);
+    prediction.stamp = performance.now();
+    return prediction;
+  }
+
+  function buildPredictionPath(target) {
+    target.moveTo(ship.x, ship.y);
+    // Physics still checks every 1/120 s; the visual polyline samples every 1/30 s.
+    for (let i = 3; i < prediction.count; i += 4) target.lineTo(prediction.points[i * 2], prediction.points[i * 2 + 1]);
+    if (prediction.count && prediction.count % 4) {
+      const lastPoint = (prediction.count - 1) * 2;
+      target.lineTo(prediction.points[lastPoint], prediction.points[lastPoint + 1]);
+    }
+  }
+
+  function drawPrediction() {
+    // Input invalidates immediately; moving targets refresh at most 20 times/s.
+    if (performance.now() - prediction.stamp >= 50) tracePrediction();
+    const routeColor = prediction.outcome === 'safe' ? '#70f0aa' : prediction.outcome === 'danger' ? '#c081ff' : '#6ee7ff';
     ctx.save();
     ctx.strokeStyle = routeColor; ctx.lineWidth = holding ? 2 : 1.3; ctx.setLineDash([3, 7]); ctx.globalAlpha = holding ? .9 : .48;
-    ctx.beginPath(); ctx.moveTo(ship.x, ship.y); points.forEach(p => ctx.lineTo(p.x, p.y)); ctx.stroke();
+    if (prediction.path) ctx.stroke(prediction.path);
+    else { ctx.beginPath(); buildPredictionPath(ctx); ctx.stroke(); }
     ctx.setLineDash([]);
-    points.forEach((p, i) => {
-      if (i % 8) return;
-      ctx.globalAlpha = (1 - i / Math.max(1, points.length)) * (holding ? .9 : .52); ctx.fillStyle = routeColor;
-      ctx.beginPath(); ctx.arc(p.x, p.y, i % 8 === 0 ? 2.8 : 1.7, 0, TAU); ctx.fill();
-    });
+    for (let i = 0; i < prediction.count; i += 16) {
+      ctx.globalAlpha = (1 - i / prediction.count) * (holding ? .9 : .52); ctx.fillStyle = routeColor;
+      ctx.beginPath(); ctx.arc(prediction.points[i * 2], prediction.points[i * 2 + 1], 2.8, 0, TAU); ctx.fill();
+    }
     ctx.restore();
   }
 
   function drawParticles() {
-    ctx.save(); particles.forEach(p => { ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill(); }); ctx.restore();
+    ctx.save(); particles.forEach(p => { if (!inCamera(p, p.r + 1)) return; ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill(); }); ctx.restore();
   }
 
   function drawCharge() {
@@ -1070,10 +1225,49 @@
   }
 
   function renderShop() { renderSkins(); renderTrails(); renderItems(); }
-  function openShop() { renderShop(); ui.shop.classList.add('open'); ui.shopCoins.textContent = save.coins; }
-  function closeShop() { ui.shop.classList.remove('open'); }
+  function openShop() { pauseRun(); renderShop(); ui.shop.classList.add('open'); ui.shopCoins.textContent = save.coins; document.querySelector('#close-shop').focus(); }
+  function closeShop() { ui.shop.classList.remove('open'); document.querySelector(state === 'suspended' ? '#resume-button' : '#shop-button').focus(); }
   function openMissions() { renderMissions(); ui.shop.classList.remove('open'); ui.missions.classList.add('open'); }
   function closeMissions() { ui.missions.classList.remove('open'); }
+
+  function cancelAim(e) {
+    if (e && pointerKey(e) !== activePointer) return;
+    const pointer = activePointer;
+    holding = false; activePointer = null;
+    if (typeof pointer === 'number' && canvas.hasPointerCapture?.(pointer)) canvas.releasePointerCapture(pointer);
+  }
+
+  function pauseRun() {
+    cancelAim(); stopMusic();
+    stopLoop();
+    if (audioCtx?.state === 'running') audioCtx.suspend().catch(() => {});
+    if (state === 'playing') {
+      state = 'suspended';
+      document.querySelector('#pause-screen').hidden = false;
+      ui.quitButton.hidden = true;
+      if (!document.hidden) document.querySelector('#resume-button').focus();
+    }
+    requestFrame();
+  }
+
+  function resumeRun() {
+    if (state !== 'suspended' || document.hidden || appBackground || ui.shop.classList.contains('open')) return;
+    document.querySelector('#pause-screen').hidden = true;
+    state = 'playing';
+    ui.quitButton.hidden = false;
+    document.activeElement?.blur(); startMusic(); wakeLoop();
+  }
+
+  function rewardFailure(ad) {
+    if (ad.unavailable) return 'Recompensa disponível no app Android.';
+    if (ad.error || !ad.shown) return 'Anúncio indisponível agora. Tente novamente em instantes.';
+    return 'Anúncio encerrado sem recompensa. Assista até o fim para receber.';
+  }
+
+  async function rewardedAd(placement) {
+    try { return await window.OrbitaAds.showRewarded(placement); }
+    catch { return { shown: false, rewarded: false, error: 'request-failed' }; }
+  }
 
   window.OrbitaHandleBack = () => {
     if (ui.missions.classList.contains('open')) { closeMissions(); return true; }
@@ -1081,20 +1275,22 @@
     if (!ui.quitConfirm.hidden) { cancelQuit(); return true; }
     if (ui.over.classList.contains('active')) {
       state = 'menu'; cameraY = cameraTargetY = 0; stopMusic(); ui.quitButton.hidden = true;
-      ui.over.classList.remove('active'); ui.start.classList.add('active'); seedMenuWorld(); return true;
+      ui.over.classList.remove('active'); ui.start.classList.add('active'); resize(); seedMenuWorld(); wakeLoop(); return true;
     }
     if (state === 'playing') { openQuitConfirm(); return true; }
+    if (state === 'suspended') { document.querySelector('#resume-button').focus(); return true; }
     return false;
   };
 
   document.querySelector('#play-button').addEventListener('click', begin);
   document.querySelector('#retry-button').addEventListener('click', restart);
   document.querySelector('#continue-button').addEventListener('click', continueRun);
-  document.querySelector('#home-button').addEventListener('click', () => { state = 'menu'; cameraY = cameraTargetY = 0; stopMusic(); ui.quitButton.hidden = true; ui.over.classList.remove('active'); ui.start.classList.add('active'); seedMenuWorld(); });
+  document.querySelector('#home-button').addEventListener('click', () => { state = 'menu'; cameraY = cameraTargetY = 0; stopMusic(); ui.quitButton.hidden = true; ui.over.classList.remove('active'); ui.start.classList.add('active'); resize(); seedMenuWorld(); wakeLoop(); });
   document.querySelector('#shop-button').addEventListener('click', openShop);
   document.querySelector('#close-shop').addEventListener('click', closeShop);
   document.querySelector('#missions-button').addEventListener('click', openMissions);
   document.querySelector('#close-missions').addEventListener('click', closeMissions);
+  document.querySelector('#resume-button').addEventListener('click', resumeRun);
   document.querySelector('#sound-button').addEventListener('click', e => {
     save.sound = !save.sound; e.currentTarget.textContent = save.sound ? 'SOM LIGADO' : 'SOM DESLIGADO'; e.currentTarget.setAttribute('aria-pressed', save.sound); persist();
     save.sound && state === 'playing' ? startMusic() : stopMusic();
@@ -1114,16 +1310,17 @@
   });
   ui.rewardDust.addEventListener('click', async () => {
     ui.rewardDust.disabled = true;
-    const ad = await window.OrbitaAds.showRewarded('dust-150');
+    const ad = await rewardedAd('dust-150');
     ui.rewardDust.disabled = false;
-    if (!ad.rewarded) return toast(ad.unavailable ? 'Recompensa disponível no app Android.' : 'Assista até o fim para receber ✦ 150.');
+    if (!ad.rewarded) return toast(rewardFailure(ad));
     save.coins += 150; persist(); renderShop(); toast('+150 POEIRA ESTELAR');
   });
 
   canvas.addEventListener('pointerdown', press);
   canvas.addEventListener('pointermove', aim);
   window.addEventListener('pointerup', release);
-  window.addEventListener('pointercancel', release);
+  window.addEventListener('pointercancel', cancelAim);
+  canvas.addEventListener('lostpointercapture', cancelAim);
   let resizeFrame = 0;
   const scheduleResize = () => {
     cancelAnimationFrame(resizeFrame);
@@ -1134,18 +1331,58 @@
   shell.addEventListener('scroll', () => shell.scrollTo(0, 0), { passive: true });
   if ('ResizeObserver' in window) new ResizeObserver(scheduleResize).observe(shell);
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { holding = false; stopMusic(); }
-    else if (state === 'playing') startMusic();
+    if (document.hidden) pauseRun();
+    else wakeLoop();
   });
-  window.addEventListener('orbita-app-pause', () => { holding = false; stopMusic(); });
-  window.addEventListener('orbita-app-resume', () => { if (state === 'playing') startMusic(); });
-  window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); if (e.repeat) return; press(e); } });
+  window.addEventListener('orbita-app-pause', () => { appBackground = true; pauseRun(); });
+  window.addEventListener('orbita-app-resume', () => { appBackground = false; wakeLoop(); });
+  window.addEventListener('blur', pauseRun);
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Escape') { window.OrbitaHandleBack(); return; }
+    if (e.code === 'Space' && (e.target === document.body || e.target === canvas)) {
+      e.preventDefault(); if (!e.repeat) press(e);
+    }
+  });
   window.addEventListener('keyup', e => { if (e.code === 'Space') release(e); });
 
-  function loop(t) {
-    const dt = Math.min(.034, (t - last) / 1000 || 0); last = t;
-    update(dt); draw(t); requestAnimationFrame(loop);
+  function requestFrame() {
+    if (!frameId && !document.hidden && !appBackground) frameId = requestAnimationFrame(loop);
   }
 
-  resize(); syncUI(); requestAnimationFrame(loop);
+  function stopLoop() {
+    cancelAnimationFrame(frameId); frameId = 0; last = 0; accumulator = 0;
+    resetPerformanceWindow();
+  }
+
+  function wakeLoop() {
+    last = performance.now(); accumulator = 0; prediction.stamp = -Infinity; requestFrame();
+    resetPerformanceWindow();
+  }
+
+  function advanceFrame(elapsed) {
+    if (state === 'paused' || state === 'suspended') return;
+    // A long stall is an interruption, not a reason to fast-forward into a collision.
+    if (state === 'playing' && elapsed > 1) { pauseRun(); return; }
+    accumulator = Math.min(MAX_FRAME_TIME, accumulator + elapsed);
+    while (accumulator + 1e-10 >= STEP) {
+      if (state === 'playing') updateSpecialEvent(STEP);
+      update(STEP); accumulator = Math.max(0, accumulator - STEP);
+      if (state === 'paused' || state === 'suspended') { accumulator = 0; break; }
+    }
+  }
+
+  function loop(t) {
+    frameId = 0;
+    if (document.hidden || appBackground) { stopLoop(); return; }
+    const elapsed = Math.max(0, (t - last) / 1000); last = t;
+    const measureStart = perfSample ? performance.now() : 0;
+    advanceFrame(elapsed);
+    const afterUpdate = perfSample ? performance.now() : 0;
+    draw(t);
+    if (perfSample) recordPerformance(elapsed, afterUpdate - measureStart, performance.now() - afterUpdate, t);
+    if (state !== 'paused' && state !== 'suspended') requestFrame();
+    else { cancelAnimationFrame(frameId); frameId = 0; }
+  }
+
+  resize(); syncUI(); wakeLoop();
 })();

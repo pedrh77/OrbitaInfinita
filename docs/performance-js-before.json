@@ -1,0 +1,10 @@
+{
+  "menu": {
+    "pid": "14622",
+    "logcat": "--------- beginning of main\n--------- beginning of system\n10-30 15:24:45.745 14622 14622 I OrbitaPerf: {\"state\":\"menu\",\"frames\":80,\"fps\":16,\"frameP50\":33.33,\"frameP95\":200,\"updateP95\":0.2,\"drawP95\":3.6,\"pixels\":2308322,\"dpr\":1.75,\"width\":1098.2857666015625,\"height\":686.2857666015625}\n10-30 15:24:50.832 14622 14622 I OrbitaPerf: {\"state\":\"playing\",\"frames\":200,\"fps\":39.2,\"frameP50\":16.66,\"frameP95\":33.33,\"updateP95\":0.2,\"drawP95\":2.6,\"pixels\":2308322,\"dpr\":1.75,\"width\":1098.2857666015625,\"height\":686.2857666015625}\n10-30 15:24:55.861 14622 14622 I OrbitaPerf: {\"state\":\"playing\",\"frames\":130,\"fps\":25.9,\"frameP50\":33.33,\"frameP95\":99.97,\"updateP95\":0.5,\"drawP95\":6.5,\"pixels\":2308322,\"dpr\":1.75,\"width\":1098.2857666015625,\"height\":686.2857666015625}\n"
+  },
+  "orbit": {
+    "pid": "15173",
+    "logcat": "--------- beginning of main\n--------- beginning of system\n"
+  }
+}

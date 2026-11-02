@@ -8,7 +8,7 @@
   <title>Órbita Infinita</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2307091a'/%3E%3Ccircle cx='32' cy='34' r='13' fill='%237c5cff'/%3E%3Cellipse cx='32' cy='34' rx='25' ry='9' fill='none' stroke='%236ee7ff' stroke-width='4' transform='rotate(-18 32 34)'/%3E%3Ccircle cx='52' cy='25' r='4' fill='%23ffcf5c'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="style.css?v=3" />
+  <link rel="stylesheet" href="style.css?v=7" />
 </head>
 <body>
   <main id="game-shell">
@@ -29,6 +29,11 @@
     <div id="combo" class="combo" aria-hidden="true">PERFEITO ×2</div>
     <div id="event-banner" class="event-banner" hidden aria-live="polite"><b>CORRIDA ESTELAR</b><span id="event-timer">18.0s</span></div>
     <button id="quit-button" class="quit-button" hidden>DESISTIR</button>
+    <section id="pause-screen" class="screen compact" aria-labelledby="pause-title" hidden>
+      <h2 id="pause-title">Viagem pausada</h2>
+      <p>A nave e o tempo da corrida ficam parados.<br>Retome quando estiver pronto.</p>
+      <button id="resume-button" class="primary">RETOMAR VIAGEM</button>
+    </section>
     <section id="start-screen" class="screen active">
       <div class="logo-planet" aria-hidden="true"><span></span></div>
       <p class="eyebrow">NEBULOSAS · COMETAS · MUNDOS SEM FIM</p>
@@ -41,6 +46,7 @@
       <button id="play-button" class="primary">JOGAR <span>→</span></button>
       <button id="missions-button" class="mission-button">MISSÕES DO DIA <span>6</span></button>
       <button id="sound-button" class="text-button" aria-pressed="true">SOM LIGADO</button>
+      <a class="feedback-link" href="https://github.com/pedrh77/OrbitaInfinita/issues/new?title=Relato%20de%20teste&amp;body=Modelo%20do%20aparelho%20e%20Android%3A%0AVers%C3%A3o%20do%20jogo%3A%0APassos%20para%20reproduzir%3A%0AO%20que%20aconteceu%3A%0AO%20que%20voc%C3%AA%20esperava%3A%0A">RELATAR PROBLEMA · GITHUB</a>
       <a class="legal-link" href="privacy.html">POLÍTICA DE PRIVACIDADE</a>
     </section>
 
@@ -51,6 +57,7 @@
       <button id="continue-button" class="reward"><span class="play-icon">▶</span><span><b>CONTINUAR</b><small>assista a um anúncio</small></span></button>
       <button id="retry-button" class="primary">TENTAR DE NOVO</button>
       <button id="home-button" class="text-button">VOLTAR AO INÍCIO</button>
+      <a class="feedback-link" href="https://github.com/pedrh77/OrbitaInfinita/issues/new">RELATAR PROBLEMA · GITHUB</a>
     </section>
 
     <section id="quit-confirm" class="screen compact confirm-screen" aria-labelledby="quit-title" hidden>
@@ -97,6 +104,6 @@
     <aside id="toast" class="toast" role="status"></aside>
   </main>
   <script src="admob.js"></script>
-  <script src="game.js?v=3"></script>
+  <script src="game.js?v=9"></script>
 </body>
 </html>

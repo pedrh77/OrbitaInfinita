@@ -69,6 +69,8 @@ jarsigner -verify -verbose -certs app/build/outputs/bundle/release/app-release.a
 4. Confirmar que a recompensa só é concedida depois de assistir ao anúncio completo.
 5. Se a conta pessoal foi criada depois de 13/11/2023, manter pelo menos 12 testadores no teste fechado por 14 dias contínuos antes de solicitar produção.
 
+Após a resposta solicitando mais testes, siga [CLOSED_TESTING.md](CLOSED_TESTING.md) para organizar o período adicional, registrar feedback real e validar correções. Os requisitos de inscrição não substituem o uso efetivo do jogo pelos testadores.
+
 ## 7. Pendência externa: app-ads.txt
 
 O AdMob procura `app-ads.txt` na raiz do domínio do site do desenvolvedor. Para o domínio atual, o arquivo deve responder em:
