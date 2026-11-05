@@ -8,7 +8,7 @@ const original = readFileSync(join(__dirname, '../dist/game.js'), 'utf8');
 const bootstrap = '  resize(); syncUI(); wakeLoop();';
 assert.equal(original.split(bootstrap).length, 2, 'test seam must match bootstrap exactly once');
 function harness(options = {}) {
-  const elements = new Map(), frames = new Map(), captures = new Set();
+  const elements = new Map(), frames = new Map(), captures = new Set(), logs = [];
   const size = { width: options.width || 390, height: options.height || 844 }, metrics = { transforms: 0, gradients: 0, arcs: 0, images: 0 };
   let now = 100, sequence = 0;
   const graphics = new Proxy({}, { get(t, k) {
@@ -21,9 +21,13 @@ function harness(options = {}) {
   } });
   function element() {
     const classes = new Set();
+    let text = '';
     return {
       hidden: true, style: {}, attributes: {}, handlers: {},
-      classList: { add: x => classes.add(x), remove: x => classes.delete(x), contains: x => classes.has(x) },
+      textWrites: 0,
+      get textContent() { return text; }, set textContent(value) { text = value; this.textWrites++; },
+      classList: { add: x => classes.add(x), remove: x => classes.delete(x), contains: x => classes.has(x),
+        toggle(x, force = !classes.has(x)) { if (force) classes.add(x); else classes.delete(x); return force; } },
       setAttribute(k, v) { this.attributes[k] = v; }, addEventListener(k, f) { this.handlers[k] = f; },
       getAttribute(k) { return this.attributes[k] ?? null; },
       focus() { document.activeElement = this; }, blur() { document.activeElement = document.body; },
@@ -49,11 +53,15 @@ function harness(options = {}) {
   }, devicePixelRatio: options.dpr || 1, getComputedStyle: () => ({ getPropertyValue: () => '0' }),
     performance: { now: () => now },
     requestAnimationFrame(fn) { const id = ++sequence; frames.set(id, fn); return id; },
-    cancelAnimationFrame(id) { frames.delete(id); }, setTimeout() { return ++sequence; }, clearTimeout() {}, console });
+    cancelAnimationFrame(id) { frames.delete(id); }, setTimeout() { return ++sequence; }, clearTimeout() {},
+    console: { ...console, info: (...args) => logs.push(args.join(' ')) } });
   const source = original.replace(bootstrap, `
     window.test = {
       STEP, begin, advanceFrame, advanceFlight, tracePrediction, resize, press, aim, release,
-      drawPrediction, drawBackground, drawPlanet, planetBody,
+      drawPrediction, drawBackground, drawPlanet, planetBody, burst, updateParticles, displayScene,
+      benchmark() { return benchmarkRunner; },
+      quality() { return { choice: qualityController.choice, resolved: qualityController.resolved, targetFPS: qualityController.targetFPS }; },
+      particleStats() { return { active: particles.length, pooled: particlePool.length }; },
       predictionStamp() { return prediction.stamp; },
       setCamera(y) { cameraY = y; },
       cancelAim, pauseRun, resumeRun, openQuitConfirm, cancelQuit, openShop, closeShop,
@@ -75,8 +83,9 @@ function harness(options = {}) {
         coins: save.coins, remaining: specialEvent?.remaining, W, H, viewScale, viewX, viewY, accumulator }); }
     }; ${bootstrap}
   `);
+  for (const dependency of ['performance.js', 'presentation.js', 'benchmark.js']) vm.runInContext(readFileSync(join(__dirname, '../dist', dependency), 'utf8'), context);
   vm.runInContext(source, context);
-  return { game: window.test, document, window, size, metrics, captures, frames,
+  return { game: window.test, document, window, size, metrics, captures, frames, storage, logs,
     snapshot: () => JSON.parse(window.test.snapshot()),
     tick(ms = 1000 / 60) { const pending = [...frames.values()]; frames.clear(); now += ms; for (const fn of pending) fn(now); }
   };
@@ -84,6 +93,8 @@ function harness(options = {}) {
 function near(a, b, message, epsilon = 1e-7) { assert.ok(Math.abs(a - b) <= epsilon, `${message}: ${a} != ${b}`); }
 function pointer(id, x = 180, y = 700) { return { pointerId: id, clientX: x, clientY: y, cancelable: true, preventDefault() {} }; }
 function test(name, run) { run(); console.log(`PASS: ${name}`); }
+
+if (require.main === module) {
 test('saved sound preference', () => {
   const { document } = harness(); assert.equal(document.querySelector('#sound-button').textContent, 'SOM DESLIGADO');
   assert.equal(document.querySelector('#sound-button').attributes['aria-pressed'], 'false');
@@ -242,11 +253,11 @@ test('planet gradients are reused while dynamic planet position changes', () => 
 test('decorative background is cached at rest and follows a moving camera immediately', () => {
   const h = harness(); h.game.drawBackground(0); const arcs = h.metrics.arcs, images = h.metrics.images;
   h.game.drawBackground(20);
-  assert.equal(h.metrics.arcs, arcs, 'stars must reuse the cached background inside 50 ms');
+  assert.equal(h.metrics.arcs, arcs, 'stars must reuse the cached background inside the balanced profile interval');
   assert.equal(h.metrics.images, images + 1, 'cached frame is still composited');
-  h.game.drawBackground(55); assert.ok(h.metrics.arcs > arcs);
+  h.game.drawBackground(75); assert.ok(h.metrics.arcs > arcs);
   const refreshed = h.metrics.arcs;
-  h.game.setCamera(10); h.game.drawBackground(56); assert.ok(h.metrics.arcs > refreshed, 'parallax cannot wait for cache timeout');
+  h.game.setCamera(10); h.game.drawBackground(76); assert.ok(h.metrics.arcs > refreshed, 'parallax cannot wait for cache timeout');
 });
 
 test('offscreen drawing is culled without removing gravitational influence', () => {
@@ -269,3 +280,6 @@ test('cached visual trajectory keeps the collision endpoint and reuses path geom
   h.game.drawPrediction(); h.tick(20); h.game.drawPrediction();
   assert.equal(preview.path, path, 'geometry is reused between solves');
 });
+}
+
+module.exports = { harness, near, pointer };

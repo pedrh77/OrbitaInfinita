@@ -13,6 +13,17 @@
 html, body { margin: 0; width: 100%; height: 100%; min-height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--ink); font-family: Inter, ui-rounded, "SF Pro Rounded", system-ui, sans-serif; color: var(--white); }
 body { position: fixed; inset: 0; height: 100dvh; }
 button { font: inherit; color: inherit; }
+.screen, .panel { touch-action: pan-y; }
+.performance-settings { display: grid; gap: 16px; max-width: 520px; margin: 24px auto 0; font-size: 1rem; }
+.performance-settings select { width: 100%; min-height: 48px; padding: 10px; border: 1px solid #6ee7ff77; border-radius: 12px; background: #10152f; color: var(--white); font: inherit; }
+.performance-settings p { margin: 0 0 8px; color: var(--muted); line-height: 1.5; }
+.performance-check { display: flex; align-items: center; gap: 12px; min-height: 48px; }
+.performance-check input { width: 22px; height: 22px; accent-color: var(--cyan); }
+#performance-overlay { position: absolute; z-index: 15; bottom: max(10px, env(safe-area-inset-bottom)); left: 10px; padding: 8px 12px; background: #07091ae8; color: #fff; font: 12px/1.4 monospace; pointer-events: none; }
+#performance-overlay[hidden], #benchmark-status[hidden] { display: none; }
+#benchmark-status { position: absolute; z-index: 20; inset: 0; display: flex; align-items: flex-end; justify-content: center; gap: 16px; padding: 12px; pointer-events: auto; }
+#benchmark-status span { padding: 12px; background: #07091ae8; color: white; font-size: 14px; }
+#stop-benchmark { min-height: 44px; padding: 8px 14px; border: 1px solid #6ee7ff; border-radius: 8px; background: #10152f; cursor: pointer; }
 button:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }
 .feedback-link { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; color: var(--cyan); font-size: .75rem; text-underline-offset: 4px; }
 .feedback-link:focus-visible { outline: 3px solid var(--cyan); outline-offset: 3px; }

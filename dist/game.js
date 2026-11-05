@@ -65,44 +65,30 @@
   const backgroundCtx = backgroundLayer.getContext('2d', { alpha: false });
   let backgroundStamp = -Infinity, backgroundCamera = NaN;
   const prediction = { points: new Float64Array(184 * 2), count: 0, outcome: 'open', stamp: -Infinity };
-  let perfSample = null;
-  // Opt-in local diagnostics, started by the Android debug build only. No network or player data.
+  let qualityController = null, benchmarkRunner = null, pixiRenderer = null;
+  let rendererName = 'canvas', presentationEnabled = false, presentation = null, benchmarkMutation = false;
+  let lastPresented = 0, overlayEnabled = false, loggingPerformance = false, benchmarkSaveIsolated = false;
+  let benchmarkSeed = 12345, benchmarkVisualRandom = null, resultTimer = 0;
+  const scene = {}, renderCounters = { backgrounds: 0, bodies: 0 };
+  const baselineQuality = { pixels: 1200000, maxDpr: 2, particleScale: 1, glowScale: 1, starScale: 1, backgroundInterval: 50 };
+  function currentQuality() { return qualityController ? qualityController.profile : baselineQuality; }
+  const recorder = new window.OrbitaPerformance.Recorder({ emit(result) {
+    if (loggingPerformance) console.info('[OrbitaPerf] ' + JSON.stringify(result));
+    const overlay = document.querySelector('#performance-overlay');
+    if (overlayEnabled && overlay) overlay.textContent = `${result.fps} FPS · p95 ${result.frameP95} ms · ${currentQuality().label || 'Balanceada'}`;
+    renderCounters.backgrounds = renderCounters.bodies = 0;
+  } });
   window.OrbitaMeasurePerformance = () => {
-    perfSample = { start: performance.now(), state, intervals: [], update: [], draw: [], windows: 0,
-      predictions: 0, backgrounds: 0, bodies: 0 };
+    loggingPerformance = true;
+    recorder.start({ scenario: 'manual', renderer: rendererName, profile: qualityController?.resolved || 'balanced', durationMs: 15000, warmupMs: 0 });
   };
-
-  function resetPerformanceWindow(now = performance.now()) {
-    if (!perfSample) return;
-    perfSample.start = now; perfSample.state = state;
-    perfSample.intervals.length = perfSample.update.length = perfSample.draw.length = 0;
-    perfSample.predictions = perfSample.backgrounds = perfSample.bodies = 0;
-  }
-
-  function recordPerformance(elapsed, updateMs, drawMs, now) {
-    const sample = perfSample;
-    if (sample.state !== state) { resetPerformanceWindow(now); return; }
-    sample.intervals.push(elapsed * 1000); sample.update.push(updateMs); sample.draw.push(drawMs);
-    if (now - sample.start < 5000) return;
-    const percentile = (values, fraction) => {
-      values.sort((a, b) => a - b);
-      return +values[Math.min(values.length - 1, Math.floor(values.length * fraction))].toFixed(2);
-    };
-    console.info('[OrbitaPerf] ' + JSON.stringify({ state, frames: sample.intervals.length, sampleMs: +(now - sample.start).toFixed(1),
-      fps: +(sample.intervals.length * 1000 / (now - sample.start)).toFixed(1),
-      frameP50: percentile(sample.intervals, .5), frameP95: percentile(sample.intervals, .95),
-      updateP95: percentile(sample.update, .95), drawP95: percentile(sample.draw, .95),
-      pixels: canvas.width * canvas.height, dpr, width: W, height: H,
-      predictionSolves: sample.predictions, backgroundPaints: sample.backgrounds, planetBodyPaints: sample.bodies }));
-    if (++sample.windows === 3) perfSample = null;
-    else resetPerformanceWindow(now);
-  }
+  function resetPerformanceWindow() { if (!benchmarkRunner?.running) recorder.suspend(); }
 
   function loadSave() {
     try { return { ...defaults, ...JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') }; }
     catch { return { ...defaults }; }
   }
-  function persist() { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); syncUI(); }
+  function persist() { if (!benchmarkSaveIsolated) localStorage.setItem(SAVE_KEY, JSON.stringify(save)); syncUI(); }
   function syncUI() {
     ensureDailyMissions();
     const setText = (element, value) => { if (element.textContent !== String(value)) element.textContent = value; };
@@ -147,7 +133,7 @@
         : Math.min(group.length, type === 'power' ? 12 : 18);
       return group[Math.floor(rnd() * playerBand)].id;
     });
-    localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+    if (!benchmarkSaveIsolated) localStorage.setItem(SAVE_KEY, JSON.stringify(save));
   }
 
   function dailyMissions() {
@@ -168,7 +154,8 @@
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(1, rect.width), height = Math.max(1, rect.height);
     // Bound raster/compositing work on large screens; DOM controls keep native resolution.
-    const nextDpr = Math.min(devicePixelRatio || 1, 2, Math.sqrt(1200000 / (width * height)));
+    const profile = currentQuality();
+    const nextDpr = Math.min(devicePixelRatio || 1, profile.maxDpr, Math.sqrt(profile.pixels / (width * height)));
     const isMenu = state === 'menu';
     if (width === viewportW && height === viewportH && nextDpr === dpr && isMenu === menuLayout) return;
     if (viewportW && (width !== viewportW || height !== viewportH)) pauseRun();
@@ -181,6 +168,7 @@
     canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
     ctx.setTransform(dpr * viewScale, 0, 0, dpr * viewScale, viewX * dpr, viewY * dpr);
     backgroundGradient = null; backgroundStamp = -Infinity; prediction.stamp = -Infinity;
+    pixiRenderer?.resize({ width, height, resolution: dpr });
     requestFrame();
   }
 
@@ -204,7 +192,9 @@
     comets = Array.from({ length: 3 }, (_, i) => makeComet(rnd, i * 2.7));
   }
 
-  function makeComet(rnd = Math.random, delay = 0) {
+  function cosmeticRandom() { return benchmarkVisualRandom ? benchmarkVisualRandom() : Math.random(); }
+
+  function makeComet(rnd = cosmeticRandom, delay = 0) {
     return { x: -80 - rnd() * W, y: rnd() * H * .7, vx: 120 + rnd() * 100, vy: 38 + rnd() * 45, life: delay };
   }
 
@@ -217,7 +207,7 @@
   }
 
   function planet(x, y, r, color, seed) {
-    return { x, y, r, color, seed, style: Math.abs(Math.floor(seed)) % 7, pulse: Math.random() * TAU, visited: false, target: false };
+    return { x, y, r, color, seed, style: Math.abs(Math.floor(seed)) % 7, pulse: cosmeticRandom() * TAU, visited: false, target: false };
   }
 
   function threatBudget(level) {
@@ -257,12 +247,14 @@
   }
 
   function begin() {
+    if (benchmarkRunner?.running && !benchmarkMutation) return;
+    clearTimeout(resultTimer); presentation?.reset();
     document.activeElement?.blur(); shell.scrollTo(0, 0);
     cancelAim();
     score = 0; streak = 0; continued = false; holding = false; charge = .35; runDust = 0; phaseCharges = 0; runShieldUsed = false; specialEvent = null;
     ui.eventBanner.hidden = true;
     cameraY = 0; cameraTargetY = 0; trail = []; particles = []; asteroids = []; collectibles = []; phenomena = [];
-    runSeed = Math.floor(Math.random() * 900000) + 100000;
+    runSeed = benchmarkSaveIsolated ? benchmarkSeed : Math.floor(Math.random() * 900000) + 100000;
     random = mulberry32(runSeed);
     current = planet(W * .5, H * .72, 39, '#7c5cff', 10);
     current.visited = true;
@@ -440,6 +432,7 @@
   }
 
   function press(e) {
+    if (benchmarkRunner?.running && !benchmarkMutation) return;
     if (holding || state !== 'playing' || ship.mode !== 'orbit' || ui.shop.classList.contains('open')) return;
     if (e?.cancelable) e.preventDefault();
     const point = inputPoint(e);
@@ -461,6 +454,7 @@
     // Keep the latest input immediately, but let the preview use its 50 ms budget.
   }
   function release(e) {
+    if (benchmarkRunner?.running && !benchmarkMutation) return;
     if (!holding || pointerKey(e) !== activePointer || state !== 'playing' || ship.mode !== 'orbit') return;
     if (e?.cancelable) e.preventDefault();
     cancelAim();
@@ -565,7 +559,8 @@
   function updateSpecialEvent(dt) {
     if (!specialEvent) return;
     const remaining = specialEvent.remaining = Math.max(0, specialEvent.remaining - dt * 1000);
-    ui.eventTimer.textContent = `${(remaining / 1000).toFixed(1)}s`;
+    const label = `${(remaining / 1000).toFixed(1)}s`;
+    if (ui.eventTimer.textContent !== label) ui.eventTimer.textContent = label;
     if (remaining > 0) return;
     specialEvent = null; ui.eventBanner.hidden = true; ping(150, .14, 'sawtooth'); toast('CORRIDA ENCERRADA · CONTINUE A VIAGEM');
   }
@@ -623,13 +618,13 @@
     ui.quitButton.hidden = true; ui.quitConfirm.hidden = true; stopMusic();
     burst(ship.x, ship.y, skinColor(), 30, 210);
     ping(110, .22, 'sawtooth');
-    setTimeout(() => {
+    resultTimer = setTimeout(() => {
       ui.final.textContent = score;
       ui.result.textContent = score >= save.best && score > 0 ? 'Novo recorde. O próximo planeta espera.' : score < 3 ? 'A próxima órbita é sua.' : 'Você chegou mais longe desta vez.';
       ui.continueButton.style.display = continued ? 'none' : 'flex';
       ui.over.classList.add('active');
     }, 420);
-    if (save.runs >= 3 && (save.runs - 3) % 2 === 0) {
+    if (!benchmarkSaveIsolated && save.runs >= 3 && (save.runs - 3) % 2 === 0) {
       window.OrbitaAds.showInterstitial('game-over').catch(() => {});
     }
   }
@@ -674,10 +669,16 @@
     wakeLoop();
   }
 
+  const particlePool = [];
   function burst(x, y, color, count, speed) {
+    const limit = Math.ceil(256 * currentQuality().particleScale);
+    count = Math.min(Math.ceil(count * currentQuality().particleScale), Math.max(0, limit - particles.length));
     for (let i = 0; i < count; i++) {
-      const a = Math.random() * TAU, s = Math.random() * speed;
-      particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: .5 + Math.random() * .6, max: 1, color, r: 1 + Math.random() * 2.5 });
+      const a = cosmeticRandom() * TAU, s = cosmeticRandom() * speed;
+      const particle = particlePool.pop() || {};
+      presentation?.forget(particle);
+      Object.assign(particle, { x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: .5 + cosmeticRandom() * .6, max: 1, color, r: 1 + cosmeticRandom() * 2.5 });
+      particles.push(particle);
     }
   }
   function updateParticles(dt) {
@@ -685,7 +686,7 @@
     let alive = 0;
     for (const p of particles) {
       p.life -= dt;
-      if (p.life <= 0) continue;
+      if (p.life <= 0) { if (particlePool.length < 256) particlePool.push(p); continue; }
       p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= drag; p.vy *= drag;
       particles[alive++] = p;
     }
@@ -697,31 +698,44 @@
       c.life -= dt;
       if (c.life > 0) continue;
       c.x += c.vx * dt; c.y += c.vy * dt;
-      if (c.x > W + 140 || c.y > H + 100) Object.assign(c, makeComet(Math.random, 3 + Math.random() * 6));
+      if (c.x > W + 140 || c.y > H + 100) Object.assign(c, makeComet(cosmeticRandom, 3 + cosmeticRandom() * 6));
     }
   }
 
+  function rawScene() {
+    return Object.assign(scene, { W, H, cameraY, state, stars, nebulae, comets, planets, asteroids, collectibles,
+      phenomena, particles, trail, ship, holding, charge, phaseCharges, safeBottom,
+      viewScale, viewX, viewY, dpr, prediction, skinColor: skinColor(), trailColor,
+      quality: currentQuality() });
+  }
+  function displayScene() {
+    const raw = rawScene();
+    return presentationEnabled && presentation ? presentation.snapshot(raw, state === 'paused' || state === 'suspended' ? 1 : accumulator / STEP) : raw;
+  }
+
   function draw(time) {
+    const display = displayScene();
+    if (pixiRenderer) { pixiRenderer.render(display, time); return; }
     ctx.fillStyle = '#07091a';
     ctx.fillRect(-viewX / viewScale, -viewY / viewScale, viewportW / viewScale, viewportH / viewScale);
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
-    drawBackground(time);
-    drawComets();
+    drawBackground(time, display.cameraY);
+    drawComets(display.comets);
     ctx.save();
-    ctx.translate(0, -cameraY);
-    for (const f of phenomena) if (f.type === 'nebula') drawPhenomenon(f);
-    planets.forEach(drawPlanet);
-    asteroids.forEach(drawAsteroid);
-    collectibles.forEach(drawCollectible);
-    for (const f of phenomena) if (f.type !== 'nebula') drawPhenomenon(f);
-    drawParticles();
-    if (state !== 'menu' && ship) drawShip();
+    ctx.translate(0, -display.cameraY);
+    for (const f of display.phenomena) if (f.type === 'nebula') drawPhenomenon(f);
+    display.planets.forEach(drawPlanet);
+    display.asteroids.forEach(drawAsteroid);
+    display.collectibles.forEach(drawCollectible);
+    for (const f of display.phenomena) if (f.type !== 'nebula') drawPhenomenon(f);
+    drawParticles(display.particles);
+    if (state !== 'menu' && ship) drawShip(display.ship, display.trail);
     ctx.restore();
     if (state === 'playing' && holding) drawCharge();
     ctx.restore();
   }
 
-  function drawBackground(time) {
+  function drawBackground(time, renderCameraY = cameraY) {
     const density = Math.min(1, dpr * viewScale);
     const width = Math.max(1, Math.round(W * density)), height = Math.max(1, Math.round(H * density));
     if (backgroundLayer.width !== width || backgroundLayer.height !== height) {
@@ -730,15 +744,15 @@
       backgroundGradient = null; backgroundStamp = -Infinity;
     }
     // Twinkle/drift are slow. Preserve full-rate parallax whenever the camera moves.
-    if (time - backgroundStamp >= 50 || cameraY !== backgroundCamera) {
-      if (perfSample) perfSample.backgrounds++;
+    if (time - backgroundStamp >= currentQuality().backgroundInterval || renderCameraY !== backgroundCamera) {
+      if (recorder.active) renderCounters.backgrounds++;
       if (!backgroundGradient) {
         backgroundGradient = backgroundCtx.createRadialGradient(W * .5, H * .32, 0, W * .5, H * .35, H * .9);
         backgroundGradient.addColorStop(0, '#171944'); backgroundGradient.addColorStop(.58, '#090b23'); backgroundGradient.addColorStop(1, '#050615');
       }
       backgroundCtx.fillStyle = backgroundGradient; backgroundCtx.fillRect(0, 0, W, H);
-      drawNebulae(time, backgroundCtx); drawStars(time, backgroundCtx);
-      backgroundStamp = time; backgroundCamera = cameraY;
+      drawNebulae(time, backgroundCtx, renderCameraY); drawStars(time, backgroundCtx, renderCameraY);
+      backgroundStamp = time; backgroundCamera = renderCameraY;
     }
     ctx.drawImage(backgroundLayer, 0, 0, W, H);
   }
@@ -748,29 +762,31 @@
     return entity.x + radius >= 0 && entity.x - radius <= W && y + radius >= 0 && y - radius <= H;
   }
 
-  function drawStars(time, target = ctx) {
+  function drawStars(time, target = ctx, renderCameraY = cameraY) {
     target.save();
-    for (const s of stars) {
-      const y = ((s.y - cameraY * .12) % H + H) % H;
+    const count = Math.ceil(stars.length * currentQuality().starScale);
+    for (let i = 0; i < count; i++) {
+      const s = stars[i];
+      const y = ((s.y - renderCameraY * .12) % H + H) % H;
       target.globalAlpha = s.a * (.75 + Math.sin(time * .0015 + s.p) * .25);
       target.fillStyle = '#dfe5ff'; target.beginPath(); target.arc(s.x, y, s.r, 0, TAU); target.fill();
     }
     target.restore();
   }
 
-  function drawNebulae(time, target = ctx) {
+  function drawNebulae(time, target = ctx, renderCameraY = cameraY) {
     target.save(); target.globalCompositeOperation = 'screen';
     for (const n of nebulae) {
       const x = n.x + Math.sin(time * n.drift * .001) * 28;
-      const y = ((n.y - cameraY * .035) % (H + n.r * 2) + H + n.r * 2) % (H + n.r * 2) - n.r;
+      const y = ((n.y - renderCameraY * .035) % (H + n.r * 2) + H + n.r * 2) % (H + n.r * 2) - n.r;
       if (x + n.r >= 0 && x - n.r <= W && y + n.r >= 0 && y - n.r <= H) target.drawImage(n.sprite, x - n.r, y - n.r);
     }
     target.restore();
   }
 
-  function drawComets() {
+  function drawComets(displayComets = comets) {
     ctx.save(); ctx.globalCompositeOperation = 'screen';
-    for (const c of comets) {
+    for (const c of displayComets) {
       if (c.life > 0) continue;
       const len = 58, angle = Math.atan2(c.vy, c.vx);
       const g = ctx.createLinearGradient(c.x, c.y, c.x - Math.cos(angle) * len, c.y - Math.sin(angle) * len);
@@ -797,7 +813,7 @@
       if (glowSprites.size >= 48) glowSprites.delete(glowSprites.keys().next().value);
       glowSprites.set(key, sprite);
     }
-    ctx.save(); ctx.globalAlpha *= strength;
+    ctx.save(); ctx.globalAlpha *= strength * currentQuality().glowScale;
     ctx.drawImage(sprite, x - sprite.width / 2, y - sprite.height / 2); ctx.restore();
   }
 
@@ -812,7 +828,7 @@
       bodySprites.delete(key); bodySprites.set(key, body);
       planetBodies.set(p, body); return body;
     }
-    if (perfSample) perfSample.bodies++;
+    if (recorder.active) renderCounters.bodies++;
     const size = radius * 2 + 2;
     const sprite = document.createElement('canvas'); sprite.width = sprite.height = Math.ceil(size * 1.5);
     const layer = sprite.getContext('2d');
@@ -1006,17 +1022,17 @@
     ctx.restore();
   }
 
-  function drawShip() {
-    if (ship.mode === 'flight') {
+  function drawShip(visualShip = ship, visualTrail = trail) {
+    if (visualShip.mode === 'flight') {
       ctx.save();
-      for (let i = 0; i < trail.length; i++) {
-        const t = trail[i]; ctx.globalAlpha = Math.max(0, t.life) * (i / trail.length) * .55;
-        ctx.fillStyle = trailColor(i); ctx.beginPath(); ctx.arc(t.x, t.y, 1 + i / trail.length * 3, 0, TAU); ctx.fill();
+      for (let i = 0; i < visualTrail.length; i++) {
+        const t = visualTrail[i]; ctx.globalAlpha = Math.max(0, t.life) * (i / visualTrail.length) * .55;
+        ctx.fillStyle = trailColor(i); ctx.beginPath(); ctx.arc(t.x, t.y, 1 + i / visualTrail.length * 3, 0, TAU); ctx.fill();
       }
       ctx.restore();
     }
-    const angle = ship.mode === 'flight' ? Math.atan2(ship.vy, ship.vx) + Math.PI / 2 : ship.aimAngle + Math.PI / 2;
-    ctx.save(); ctx.translate(ship.x, ship.y); ctx.rotate(angle); drawGlow(0, 0, 12, skinColor(), 14); ctx.fillStyle = skinColor();
+    const angle = visualShip.mode === 'flight' ? Math.atan2(visualShip.vy, visualShip.vx) + Math.PI / 2 : visualShip.aimAngle + Math.PI / 2;
+    ctx.save(); ctx.translate(visualShip.x, visualShip.y); ctx.rotate(angle); drawGlow(0, 0, 12, skinColor(), 14); ctx.fillStyle = skinColor();
     ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(7, 8); ctx.lineTo(2, 6); ctx.lineTo(0, 12); ctx.lineTo(-2, 6); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill();
     ctx.shadowBlur = 0; ctx.fillStyle = '#151933'; ctx.beginPath(); ctx.arc(0, -2, 2.8, 0, TAU); ctx.fill();
     if (phaseCharges > 0) {
@@ -1024,11 +1040,11 @@
       ctx.beginPath(); ctx.arc(0, 0, 15 + Math.sin(performance.now() * .008) * 1.5, 0, TAU); ctx.stroke();
     }
     ctx.restore();
-    if (ship.mode === 'orbit') drawPrediction();
+    if (visualShip.mode === 'orbit') drawPrediction();
   }
 
   function tracePrediction() {
-    if (perfSample) perfSample.predictions++;
+    const measureStart = recorder.active ? performance.now() : 0;
     const speed = (255 + charge * 290) * (save.boosters > 0 ? 1.15 : 1);
     const body = { x: ship.x, y: ship.y, vx: Math.cos(ship.aimAngle) * speed, vy: Math.sin(ship.aimAngle) * speed };
     const previewBoosts = new Set();
@@ -1060,6 +1076,7 @@
     prediction.path = typeof Path2D === 'function' ? new Path2D() : null;
     if (prediction.path) buildPredictionPath(prediction.path);
     prediction.stamp = performance.now();
+    if (recorder.active) recorder.prediction(prediction.stamp - measureStart);
     return prediction;
   }
 
@@ -1089,8 +1106,8 @@
     ctx.restore();
   }
 
-  function drawParticles() {
-    ctx.save(); particles.forEach(p => { if (!inCamera(p, p.r + 1)) return; ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill(); }); ctx.restore();
+  function drawParticles(displayParticles = particles) {
+    ctx.save(); displayParticles.forEach(p => { if (!inCamera(p, p.r + 1)) return; ctx.globalAlpha = Math.max(0, p.life / p.max); ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill(); }); ctx.restore();
   }
 
   function drawCharge() {
@@ -1226,9 +1243,10 @@
 
   function renderShop() { renderSkins(); renderTrails(); renderItems(); }
   function openShop() { pauseRun(); renderShop(); ui.shop.classList.add('open'); ui.shopCoins.textContent = save.coins; document.querySelector('#close-shop').focus(); }
-  function closeShop() { ui.shop.classList.remove('open'); document.querySelector(state === 'suspended' ? '#resume-button' : '#shop-button').focus(); }
-  function openMissions() { renderMissions(); ui.shop.classList.remove('open'); ui.missions.classList.add('open'); }
-  function closeMissions() { ui.missions.classList.remove('open'); }
+  function closeShop() { ui.shop.classList.remove('open'); document.querySelector(state === 'suspended' ? '#resume-button' : '#shop-button').focus(); wakeLoop(); }
+  function openMissions() { pauseRun(); renderMissions(); ui.shop.classList.remove('open'); ui.missions.classList.add('open'); }
+  function closeMissions() { ui.missions.classList.remove('open'); wakeLoop(); }
+  function panelOpen() { return ui.shop.classList.contains('open') || ui.missions.classList.contains('open') || document.querySelector('#performance-panel').classList.contains('open'); }
 
   function cancelAim(e) {
     if (e && pointerKey(e) !== activePointer) return;
@@ -1238,6 +1256,7 @@
   }
 
   function pauseRun() {
+    recorder.suspend(); qualityController?.reset();
     cancelAim(); stopMusic();
     stopLoop();
     if (audioCtx?.state === 'running') audioCtx.suspend().catch(() => {});
@@ -1251,7 +1270,7 @@
   }
 
   function resumeRun() {
-    if (state !== 'suspended' || document.hidden || appBackground || ui.shop.classList.contains('open')) return;
+    if (state !== 'suspended' || document.hidden || appBackground || panelOpen()) return;
     document.querySelector('#pause-screen').hidden = true;
     state = 'playing';
     ui.quitButton.hidden = false;
@@ -1270,6 +1289,8 @@
   }
 
   window.OrbitaHandleBack = () => {
+    if (benchmarkRunner?.running) { benchmarkRunner.stop(); return true; }
+    if (document.querySelector('#performance-panel').classList.contains('open')) { closePerformance(); return true; }
     if (ui.missions.classList.contains('open')) { closeMissions(); return true; }
     if (ui.shop.classList.contains('open')) { closeShop(); return true; }
     if (!ui.quitConfirm.hidden) { cancelQuit(); return true; }
@@ -1335,7 +1356,7 @@
     else wakeLoop();
   });
   window.addEventListener('orbita-app-pause', () => { appBackground = true; pauseRun(); });
-  window.addEventListener('orbita-app-resume', () => { appBackground = false; wakeLoop(); });
+  window.addEventListener('orbita-app-resume', () => { appBackground = false; if (benchmarkRunner?.running && state === 'suspended') resumeRun(); else wakeLoop(); });
   window.addEventListener('blur', pauseRun);
   window.addEventListener('keydown', e => {
     if (e.code === 'Escape') { window.OrbitaHandleBack(); return; }
@@ -1362,10 +1383,18 @@
   function advanceFrame(elapsed) {
     if (state === 'paused' || state === 'suspended') return;
     // A long stall is an interruption, not a reason to fast-forward into a collision.
-    if (state === 'playing' && elapsed > 1) { pauseRun(); return; }
+    if (state === 'playing' && elapsed > 1) {
+      if (benchmarkRunner?.running) {
+        console.info('[OrbitaBench] ' + JSON.stringify({ type: 'benchmark-stall', elapsedMs: elapsed * 1000 }));
+        accumulator = 0;
+      } else pauseRun();
+      return;
+    }
     accumulator = Math.min(MAX_FRAME_TIME, accumulator + elapsed);
     while (accumulator + 1e-10 >= STEP) {
       if (state === 'playing') updateSpecialEvent(STEP);
+      benchmarkRunner?.step(STEP);
+      if (presentationEnabled) presentation.capture(rawScene());
       update(STEP); accumulator = Math.max(0, accumulator - STEP);
       if (state === 'paused' || state === 'suspended') { accumulator = 0; break; }
     }
@@ -1374,15 +1403,155 @@
   function loop(t) {
     frameId = 0;
     if (document.hidden || appBackground) { stopLoop(); return; }
+    if (qualityDirty) { qualityDirty = false; resize(); lastPresented = 0; }
     const elapsed = Math.max(0, (t - last) / 1000); last = t;
-    const measureStart = perfSample ? performance.now() : 0;
+    const measureStart = recorder.active ? performance.now() : 0;
     advanceFrame(elapsed);
-    const afterUpdate = perfSample ? performance.now() : 0;
-    draw(t);
-    if (perfSample) recordPerformance(elapsed, afterUpdate - measureStart, performance.now() - afterUpdate, t);
-    if (state !== 'paused' && state !== 'suspended') requestFrame();
+    const afterUpdate = recorder.active ? performance.now() : 0;
+    if (state === 'playing' && ship?.mode === 'orbit' && performance.now() - prediction.stamp >= 50) tracePrediction();
+    const afterPrediction = recorder.active ? performance.now() : 0;
+    const targetFPS = qualityController?.targetFPS || 60;
+    const presented = targetFPS !== 30 || !lastPresented || t - lastPresented >= 1000 / targetFPS - .5;
+    if (presented) { draw(t); lastPresented = t; }
+    if (qualityController && !benchmarkRunner?.running) qualityController.observe(elapsed * 1000);
+    if (recorder.active) recorder.frame({ elapsedMs: elapsed * 1000,
+      updateMs: afterUpdate - measureStart, renderMs: performance.now() - afterPrediction, presented, state,
+      counters: { ...renderCounters, pixels: canvas.width * canvas.height, renderer: rendererName, quality: qualityController?.resolved || 'balanced' } });
+    benchmarkRunner?.afterFrame();
+    if (state !== 'paused' && state !== 'suspended' && !panelOpen()) requestFrame();
     else { cancelAnimationFrame(frameId); frameId = 0; }
   }
+
+  async function loadLocalScript(src) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script'); script.src = src;
+      script.onload = resolve; script.onerror = () => reject(new Error(`Could not load ${src}`));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function setRenderer(name) {
+    if (name === rendererName && (name === 'canvas' || pixiRenderer)) return rendererName;
+    stopLoop();
+    if (pixiRenderer) { pixiRenderer.destroy(); pixiRenderer = null; }
+    rendererName = 'canvas'; canvas.style.opacity = '';
+    if (name === 'pixi') {
+      try {
+        if (!window.PIXI) await loadLocalScript('vendor/pixi-8.22.0.min.js');
+        if (!window.OrbitaPixiRenderer) await loadLocalScript('pixi-renderer.js');
+        pixiRenderer = await window.OrbitaPixiRenderer.create({ host: shell, width: viewportW, height: viewportH,
+          resolution: dpr, planetBody, onError(error) {
+            console.info('[OrbitaBench] ' + JSON.stringify({ type: 'renderer-fallback', message: String(error?.message || error) }));
+            if (benchmarkRunner?.running) benchmarkRunner.stop('renderer-error');
+            else setRenderer('canvas');
+          } });
+        rendererName = 'pixi'; canvas.style.opacity = '0';
+      } catch (error) {
+        if (pixiRenderer) pixiRenderer.destroy();
+        pixiRenderer = null; canvas.style.opacity = ''; rendererName = 'canvas';
+        console.info('[OrbitaBench] ' + JSON.stringify({ type: 'renderer-fallback', message: String(error?.message || error) }));
+      }
+    }
+    wakeLoop(); return rendererName;
+  }
+
+  let qualityDirty = false;
+  function applyQuality() {
+    backgroundStamp = -Infinity; prediction.stamp = -Infinity;
+    qualityDirty = true;
+    const select = document.querySelector('#quality-select');
+    select.value = qualityController.choice;
+    document.querySelector('#eco-30').checked = qualityController.cap30;
+    document.querySelector('#performance-button').textContent = `GRÁFICOS · ${qualityController.choice === 'auto' ? 'AUTOMÁTICO' : qualityController.profile.label.toUpperCase()}`;
+    document.querySelector('#quality-description').textContent = qualityController.choice === 'auto'
+      ? `Adapta resolução e efeitos à fluidez. Perfil atual: ${qualityController.profile.label}.`
+      : { high: 'Mais detalhes e resolução elevada.', balanced: 'Equilíbrio entre detalhes e fluidez.', eco: 'Resolução e efeitos reduzidos para diminuir o consumo.' }[qualityController.choice];
+    requestFrame();
+  }
+  function openPerformance() { pauseRun(); document.querySelector('#performance-panel').classList.add('open'); document.querySelector('#quality-select').focus(); }
+  function closePerformance() { document.querySelector('#performance-panel').classList.remove('open'); document.querySelector(state === 'suspended' ? '#resume-button' : '#performance-button').focus(); wakeLoop(); }
+
+  function initializeBenchmarks() {
+    benchmarkRunner = new window.OrbitaBenchmarkRunner({ recorder,
+      emit: result => console.info('[OrbitaBench] ' + JSON.stringify(result)),
+      overlay(info) {
+        const status = document.querySelector('#benchmark-status'); status.hidden = !info.running;
+        if (info.running) document.querySelector('#benchmark-copy').textContent = `Teste ${info.scenario} · ${info.renderer} · Voltar encerra`;
+      },
+      api: {
+        capture() {
+          const saved = { save, renderer: rendererName, quality: qualityController?.choice, cap30: qualityController?.cap30,
+            state, W, H, stars, nebulae, comets, planets, particles, trail, asteroids, collectibles, phenomena,
+            ship, current, targets, score, streak, cameraY, cameraTargetY, runDust, specialEvent, random, runSeed,
+            continued, charge, phaseCharges, runShieldUsed, resultCopy: ui.result.textContent, continueDisplay: ui.continueButton.style.display };
+          benchmarkSaveIsolated = true; save = JSON.parse(JSON.stringify(save)); save.sound = false;
+          save.shields = save.boosters = save.runs = 0; loggingPerformance = true;
+          return saved;
+        },
+        async restore(saved) {
+          clearTimeout(resultTimer); stopLoop(); stopMusic();
+          ({ save, W, H, stars, nebulae, comets, planets, particles, trail, asteroids, collectibles, phenomena,
+            ship, current, targets, score, streak, cameraY, cameraTargetY, runDust, specialEvent, random, runSeed,
+            continued, charge, phaseCharges, runShieldUsed } = saved);
+          state = saved.state === 'playing' ? 'suspended' : saved.state;
+          benchmarkSaveIsolated = false; benchmarkVisualRandom = null; holding = false; activePointer = null;
+          if (qualityController && saved.quality) qualityController.select(saved.quality, saved.cap30, false);
+          ui.start.classList.toggle('active', state === 'menu'); ui.over.classList.toggle('active', state === 'over');
+          ui.quitConfirm.hidden = state !== 'paused'; document.querySelector('#pause-screen').hidden = state !== 'suspended';
+          ui.quitButton.hidden = state !== 'playing'; ui.score.textContent = score;
+          ui.sector.textContent = `SETOR ${String(score + 1).padStart(2, '0')}`;
+          ui.final.textContent = score; ui.result.textContent = saved.resultCopy; ui.continueButton.style.display = saved.continueDisplay;
+          ui.eventBanner.hidden = !specialEvent; syncUI();
+          presentation?.reset(); backgroundGradient = null; backgroundStamp = -Infinity; menuLayout = ! (state === 'menu');
+          await setRenderer(saved.renderer); resize(); wakeLoop();
+        },
+        setRenderer,
+        setQuality(name) { if (qualityController) qualityController.select(name, false, false); },
+        pause() { stopMusic(); stopLoop(); },
+        state: () => ({ state, mode: ship?.mode }),
+        reset({ seed, level, mode }) {
+          benchmarkSeed = seed; benchmarkVisualRandom = mulberry32(seed ^ 0x15a4e35);
+          benchmarkMutation = true;
+          try {
+            save.sound = false; save.shields = save.boosters = save.runs = 0;
+            makeStars(); begin();
+            if (level) {
+              score = level; planets = [current]; asteroids = []; collectibles = []; phenomena = [];
+              random = mulberry32(seed); spawnTargets(); ui.score.textContent = score;
+            }
+            if (mode === 'menu') {
+              state = 'menu'; ui.start.classList.add('active'); ui.quitButton.hidden = true; seedMenuWorld();
+            }
+            ui.over.classList.remove('active'); ui.quitConfirm.hidden = true;
+            prediction.stamp = -Infinity; backgroundStamp = -Infinity; presentation?.reset(); wakeLoop();
+          } finally { benchmarkMutation = false; }
+        },
+        aim(angle, power) { if (ship?.mode === 'orbit') { holding = true; activePointer = 'keyboard'; ship.aimAngle = angle; charge = power; } },
+        launch() {
+          benchmarkMutation = true;
+          try { holding = true; activePointer = 'keyboard'; charge = .65; ship.aimAngle = -Math.PI / 2; release({}); }
+          finally { benchmarkMutation = false; }
+        },
+        burst: count => burst(current.x, current.y - 100, '#6ee7ff', count, 150)
+      }
+    });
+    window.OrbitaBenchmark = options => benchmarkRunner.start(options);
+    document.querySelector('#stop-benchmark').addEventListener('click', () => benchmarkRunner.stop());
+  }
+
+  document.querySelector('#performance-button').addEventListener('click', openPerformance);
+  document.querySelector('#close-performance').addEventListener('click', closePerformance);
+  document.querySelector('#quality-select').addEventListener('change', event => qualityController?.select(event.target.value));
+  document.querySelector('#eco-30').addEventListener('change', event => qualityController?.select(qualityController.choice, event.target.checked));
+  document.querySelector('#show-fps').addEventListener('change', event => {
+    overlayEnabled = event.target.checked; document.querySelector('#performance-overlay').hidden = !overlayEnabled;
+    if (overlayEnabled) recorder.start({ scenario: 'manual', renderer: rendererName, profile: qualityController?.resolved || 'balanced', warmupMs: 0, windowMs: 1000, durationMs: Infinity });
+    else if (!benchmarkRunner?.running) recorder.active = false;
+  });
+  initializeBenchmarks();
+  presentation = new window.OrbitaPresentation(); presentationEnabled = true;
+  qualityController = new window.OrbitaPerformance.Quality({ storage: localStorage, onChange: applyQuality });
+  applyQuality();
 
   resize(); syncUI(); wakeLoop();
 })();

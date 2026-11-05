@@ -1,4 +1,5 @@
 .gradle/
+node_modules/
 .idea/
 local.properties
 **/build/
