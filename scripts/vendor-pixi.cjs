@@ -1,0 +1,11 @@
+const { copyFileSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs');
+const { join } = require('node:path');
+const root = join(__dirname, '..');
+const pkg = JSON.parse(readFileSync(join(root, 'node_modules/pixi.js/package.json'), 'utf8'));
+if (pkg.version !== '8.22.0') throw new Error('Expected pixi.js 8.22.0; use npm ci');
+const target = join(root, 'dist/vendor');
+mkdirSync(target, { recursive: true });
+copyFileSync(join(root, 'node_modules/pixi.js/dist/pixi.min.js'), join(target, 'pixi-8.22.0.min.js'));
+copyFileSync(join(root, 'node_modules/pixi.js/LICENSE'), join(target, 'PIXI-LICENSE.txt'));
+writeFileSync(join(target, 'README.txt'), 'PixiJS 8.22.0, MIT license. Rebuild: npm ci && npm run vendor:pixi\nUsed only by the comparative renderer prototype; no runtime CDN.\n');
+console.log('Vendored PixiJS 8.22.0 locally');

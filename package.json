@@ -1,0 +1,12 @@
+{
+  "name": "orbita-infinita",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "vendor:pixi": "node scripts/vendor-pixi.cjs",
+    "test": "node scripts/test-game.cjs && node scripts/test-game-integration.cjs && node scripts/test-admob.cjs && node scripts/test-performance.cjs && node scripts/test-presentation.cjs && node scripts/test-benchmark.cjs && node scripts/test-pixi-renderer.cjs"
+  },
+  "devDependencies": {
+    "pixi.js": "8.22.0"
+  }
+}

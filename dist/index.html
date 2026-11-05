@@ -46,6 +46,7 @@
       <button id="play-button" class="primary">JOGAR <span>→</span></button>
       <button id="missions-button" class="mission-button">MISSÕES DO DIA <span>6</span></button>
       <button id="sound-button" class="text-button" aria-pressed="true">SOM LIGADO</button>
+      <button id="performance-button" class="text-button">GRÁFICOS · AUTOMÁTICO</button>
       <a class="feedback-link" href="https://github.com/pedrh77/OrbitaInfinita/issues/new?title=Relato%20de%20teste&amp;body=Modelo%20do%20aparelho%20e%20Android%3A%0AVers%C3%A3o%20do%20jogo%3A%0APassos%20para%20reproduzir%3A%0AO%20que%20aconteceu%3A%0AO%20que%20voc%C3%AA%20esperava%3A%0A">RELATAR PROBLEMA · GITHUB</a>
       <a class="legal-link" href="privacy.html">POLÍTICA DE PRIVACIDADE</a>
     </section>
@@ -101,9 +102,24 @@
       </div>
     </section>
 
+    <section id="performance-panel" class="panel" aria-labelledby="performance-title">
+      <div class="panel-head"><h2 id="performance-title">Gráficos</h2><button id="close-performance" class="close" aria-label="Fechar gráficos">×</button></div>
+      <div class="performance-settings">
+        <label for="quality-select">Qualidade gráfica</label>
+        <select id="quality-select"><option value="auto">Automática</option><option value="high">Alta</option><option value="balanced">Balanceada</option><option value="eco">Econômica</option></select>
+        <p id="quality-description">Adapta a resolução e os efeitos à fluidez do aparelho.</p>
+        <label class="performance-check"><input id="eco-30" type="checkbox"> Limitar a 30 FPS no perfil Econômica</label>
+        <label class="performance-check"><input id="show-fps" type="checkbox"> Mostrar FPS e tempo de quadro</label>
+      </div>
+    </section>
+    <aside id="performance-overlay" hidden aria-live="off"></aside>
+    <div id="benchmark-status" hidden><span id="benchmark-copy"></span><button id="stop-benchmark">Encerrar teste</button></div>
     <aside id="toast" class="toast" role="status"></aside>
   </main>
   <script src="admob.js"></script>
-  <script src="game.js?v=9"></script>
+  <script src="performance.js"></script>
+  <script src="presentation.js"></script>
+  <script src="benchmark.js"></script>
+  <script src="game.js?v=11"></script>
 </body>
 </html>
