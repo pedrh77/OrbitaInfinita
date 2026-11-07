@@ -16,6 +16,8 @@ A nova solicitação de acesso à produção foi enviada pelo Console. O Google 
 
 O código da versão 1.0.2 e as notas estão preparados. A configuração `keystore.properties` e a chave de upload deste aplicativo não foram encontradas no projeto nem na busca nos locais comuns do computador. Não use a chave de outro aplicativo nem crie uma substituta sem verificar o certificado esperado na Play. O AAB gerado sem essa configuração não está assinado e não pode ser enviado como atualização válida.
 
+`bundleRelease --offline` e `lintRelease --offline` concluíram com sucesso; o lint não encontrou problemas. AAB preparado: `app/build/outputs/bundle/release/app-release.aab`, SHA-256 `2ff40c764e08622d586ab23d54e1652ee44602a1411623c274465506fee75c2d`. A inspeção do ZIP confirmou ausência de blocos de assinatura em `META-INF`. Este arquivo é um artefato de preparação, não um pacote pronto para upload.
+
 As notas para a loja estão em [store-assets/release-notes/pt-BR.txt](store-assets/release-notes/pt-BR.txt). O [histórico](CHANGELOG.md) e o [relatório técnico](docs/PERFORMANCE_2026-11-06.md) documentam as mudanças e os testes executados.
 
 Para concluir o envio Android: localizar a configuração de assinatura original, conferir o certificado de upload e o maior versionCode na Play, gerar/verificar o AAB assinado e enviar à faixa apropriada. Se a chave foi perdida, será necessário seguir a recuperação oficial da chave de upload no Play Console.
