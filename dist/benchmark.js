@@ -30,7 +30,7 @@
         if (!SCENARIOS.has(scenario)) throw new RangeError(`Unknown benchmark scenario: ${scenario}`);
         if (!['canvas', 'pixi'].includes(renderer)) throw new RangeError(`Unknown benchmark renderer: ${renderer}`);
         if (!['high', 'balanced', 'eco'].includes(quality)) throw new RangeError(`Unknown benchmark quality: ${quality}`);
-        if (!Number.isFinite(seconds) || seconds < 5 || seconds > 180) throw new RangeError('Benchmark duration must be between 5 and 180 seconds.');
+        if (!Number.isFinite(seconds) || seconds < 5 || seconds > 900) throw new RangeError('Benchmark duration must be between 5 and 900 seconds.');
         if (!Number.isSafeInteger(seed)) throw new RangeError('Benchmark seed must be a safe integer.');
         this.options = { scenario, renderer, quality, seconds, seed };
         this.saved = this.api.capture(); this.hasSaved = true; this.running = true;
@@ -101,7 +101,7 @@
         const state = this.api.state();
         if (state.state === 'over' || state.mode === 'over') {
           this.runIndex++; this._setFixture('flight');
-        }
+        } else if (state.state === 'playing' && state.mode === 'orbit') this.api.launch();
       } else if (this.kind === 'particles') {
         const count = Math.floor((this.phaseTime + 1e-9) / .5);
         if (count > this.burstCount) { this.burstCount = count; this.api.burst(60); }
@@ -142,9 +142,13 @@
       try { restored = this.api.restore(saved); }
       catch (error) { restored = Promise.reject(error); }
       this.overlay({ running: false });
-      this.emit({ type: reason === 'complete' ? 'benchmark-complete' : 'benchmark-stopped',
-        reason, ...this.options, reports: this.reports.length });
-      this._restoration = Promise.resolve(restored).catch(error => {
+      const completion = { type: reason === 'complete' ? 'benchmark-complete' : 'benchmark-stopped',
+        reason, ...this.options, reports: this.reports.length };
+      const asynchronous = restored && typeof restored.then === 'function';
+      if (!asynchronous) this.emit(completion);
+      this._restoration = Promise.resolve(restored).then(() => {
+        if (asynchronous) this.emit(completion);
+      }).catch(error => {
         this.emit({ type: 'benchmark-error', message: `Restore failed: ${String(error?.message || error)}` });
         throw error;
       });

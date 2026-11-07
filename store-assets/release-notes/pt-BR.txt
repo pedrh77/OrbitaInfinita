@@ -1,0 +1,9 @@
+Mais fluidez entre órbitas!
+
+• Renderização otimizada e melhor cadência de quadros no Android.
+• Câmera mais responsiva durante a mira.
+• Mensagens claras ao empatar ou superar seu recorde.
+• Recuperação automática em caso de falha gráfica.
+• Ajustes na qualidade automática para equilibrar visual e desempenho.
+
+Seu progresso e as regras do jogo continuam preservados.

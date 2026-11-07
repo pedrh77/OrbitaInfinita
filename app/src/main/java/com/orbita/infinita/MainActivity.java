@@ -16,6 +16,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.ComponentActivity;
@@ -33,11 +34,13 @@ public final class MainActivity extends ComponentActivity {
     private AdMobBridge adMobBridge;
     private PrivacyBridge privacyBridge;
     private boolean adsInitialized;
+    private RenderPulseBridge renderPulseBridge;
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.rgb(7, 9, 26));
@@ -83,12 +86,16 @@ public final class MainActivity extends ComponentActivity {
 
         adMobBridge = new AdMobBridge(this, webView);
         privacyBridge = new PrivacyBridge(this, webView, this::initializeAds);
+        renderPulseBridge = new RenderPulseBridge(this, webView,
+                !(BuildConfig.DEBUG && getIntent().getBooleanExtra("orbita.disable_pulse", false)),
+                BuildConfig.DEBUG && getIntent().getBooleanExtra("orbita.force_redraw", false));
         webView.addJavascriptInterface(adMobBridge, "OrbitaNativeAds");
         webView.addJavascriptInterface(privacyBridge, "OrbitaNativePrivacy");
+        webView.addJavascriptInterface(renderPulseBridge, "OrbitaNativeDisplay");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView view, String url) {
-                if (!BuildConfig.DEBUG || !GAME_URL.equals(url)) return;
+                  if (!BuildConfig.DEBUG || !(GAME_URL.equals(url) || (GAME_URL + "?benchmark=1").equals(url))) return;
                 String scenario = getIntent().getStringExtra("orbita.benchmark");
                 if (scenario != null) {
                     try {
@@ -96,7 +103,7 @@ public final class MainActivity extends ComponentActivity {
                         options.put("scenario", scenario);
                         options.put("renderer", getIntent().getStringExtra("orbita.renderer") == null ? "canvas" : getIntent().getStringExtra("orbita.renderer"));
                         options.put("quality", getIntent().getStringExtra("orbita.quality") == null ? "balanced" : getIntent().getStringExtra("orbita.quality"));
-                        options.put("seconds", Math.max(5, Math.min(180, getIntent().getIntExtra("orbita.seconds", 20))));
+                        options.put("seconds", Math.max(5, Math.min(900, getIntent().getIntExtra("orbita.seconds", 20))));
                         options.put("seed", getIntent().getIntExtra("orbita.seed", 12345));
                         view.evaluateJavascript("window.OrbitaBenchmark?.(" + options.toString() + ")", null);
                     } catch (Exception error) {
@@ -104,6 +111,9 @@ public final class MainActivity extends ComponentActivity {
                     }
                 } else if (getIntent().getBooleanExtra("orbita.profile", false)) {
                     view.evaluateJavascript("window.OrbitaMeasurePerformance?.()", null);
+                }
+                if (getIntent().getBooleanExtra("orbita.lose_context", false)) {
+                    view.evaluateJavascript("setTimeout(() => { const c = document.querySelector('#orbita-pixi'); const gl = c && (c.getContext('webgl2') || c.getContext('webgl')); const e = gl && gl.getExtension('WEBGL_lose_context'); console.info('[OrbitaBench] ' + JSON.stringify({type:'context-loss-test', supported:!!e})); if(e) e.loseContext(); }, 8000)", null);
                 }
             }
 
@@ -127,6 +137,7 @@ public final class MainActivity extends ComponentActivity {
 
             @Override
             public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                renderPulseBridge.pause();
                 if (view.getParent() instanceof ViewGroup) {
                     ((ViewGroup) view.getParent()).removeView(view);
                 }
@@ -153,7 +164,8 @@ public final class MainActivity extends ComponentActivity {
             }
         });
 
-        webView.loadUrl(GAME_URL);
+        boolean diagnostic = BuildConfig.DEBUG && getIntent().getStringExtra("orbita.benchmark") != null;
+        webView.loadUrl(GAME_URL + (diagnostic ? "?benchmark=1" : ""));
         privacyBridge.requestConsent();
     }
 
@@ -177,6 +189,7 @@ public final class MainActivity extends ComponentActivity {
 
     @Override
     protected void onPause() {
+        renderPulseBridge.pause();
         webView.evaluateJavascript("window.dispatchEvent(new Event('orbita-app-pause'))", null);
         webView.onPause();
         super.onPause();
@@ -185,12 +198,22 @@ public final class MainActivity extends ComponentActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        renderPulseBridge.focus(webView.hasWindowFocus());
+        renderPulseBridge.resume();
         webView.onResume();
         webView.evaluateJavascript("window.dispatchEvent(new Event('orbita-app-resume'))", null);
     }
 
     @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (renderPulseBridge != null) renderPulseBridge.focus(hasFocus);
+    }
+
+    @Override
     protected void onDestroy() {
+        renderPulseBridge.destroy();
+        webView.removeJavascriptInterface("OrbitaNativeDisplay");
         webView.removeJavascriptInterface("OrbitaNativeAds");
         webView.removeJavascriptInterface("OrbitaNativePrivacy");
         webView.destroy();

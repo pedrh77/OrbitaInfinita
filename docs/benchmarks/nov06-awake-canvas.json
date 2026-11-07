@@ -1,0 +1,111 @@
+{
+  "status": "error",
+  "message": "Screen switched off or game lost foreground focus; this run is invalid.",
+  "records": [
+    {
+      "type": "benchmark-start",
+      "scenario": "long",
+      "renderer": "canvas",
+      "quality": "balanced",
+      "seconds": 600,
+      "seed": 12345,
+      "startedAt": 923.6999999880791,
+      "tag": "OrbitaBench"
+    },
+    {
+      "type": "benchmark-scene",
+      "running": true,
+      "scenario": "long",
+      "renderer": "canvas",
+      "quality": "balanced",
+      "seed": 12345,
+      "index": 1,
+      "count": 1,
+      "tag": "OrbitaBench"
+    },
+    {
+      "type": "benchmark-stall",
+      "elapsedMs": 1033.038,
+      "tag": "OrbitaBench"
+    }
+  ],
+  "logcat": "--------- beginning of main\n--------- beginning of system\n11-06 16:31:33.042  7941  7941 I OrbitaBench: {\"type\":\"benchmark-start\",\"scenario\":\"long\",\"renderer\":\"canvas\",\"quality\":\"balanced\",\"seconds\":600,\"seed\":12345,\"startedAt\":923.6999999880791}\n11-06 16:31:33.042  7941  7941 I OrbitaBench: {\"type\":\"benchmark-scene\",\"running\":true,\"scenario\":\"long\",\"renderer\":\"canvas\",\"quality\":\"balanced\",\"seed\":12345,\"index\":1,\"count\":1}\n11-06 16:31:33.848  7941  7941 I OrbitaBench: {\"type\":\"benchmark-stall\",\"elapsedMs\":1033.038}\n",
+  "device": {
+    "model": {
+      "stdout": "AGS6-W09",
+      "error": null
+    },
+    "manufacturer": {
+      "stdout": "HUAWEI",
+      "error": null
+    },
+    "androidSDK": {
+      "stdout": "29",
+      "error": null
+    },
+    "androidRelease": {
+      "stdout": "10",
+      "error": null
+    },
+    "webView": {
+      "stdout": "Current WebView Update Service state\n  Fallback logic enabled: false\n  Multiprocess enabled: true\n  Current WebView package (name, version): (com.huawei.webview, 114.0.5.302)\n  Minimum targetSdkVersion: 29\n  Minimum WebView version code: -1\n  Number of relros started: 2\n  Number of relros finished: 2\n  WebView package dirty: false\n  Any WebView package installed: true\n  Preferred WebView package (name, version): (com.huawei.webview, 114.0.5.302)\n  WebView packages:\n    Valid package com.huawei.webview (versionName: 114.0.5.302, versionCode: 21705, targetSdkVersion: 33) is  installed/enabled for all users\n    com.android.chrome is NOT installed.\n    com.gbox.com.android.chrome is NOT installed.\n    com.google.android.webview is NOT installed.\n    com.android.webview is NOT installed.",
+      "error": null
+    },
+    "batteryBefore": {
+      "stdout": "Current Battery Service state:\n  AC powered: false\n  USB powered: true\n  Wireless powered: false\n  Max charging current: 0\n  Max charging voltage: 0\n  Charge counter: 1750000\n  status: 2\n  health: 2\n  present: true\n  level: 19\n  scale: 100\n  voltage: 3695\n  temperature: 350\n  technology: Li-poly",
+      "error": null
+    },
+    "lowPowerBefore": {
+      "stdout": "0",
+      "error": null
+    },
+    "installedAPKs": [
+      {
+        "path": "/data/app/com.orbita.infinita.debug-dNmDjlndnp4n15YpsY89Bg==/base.apk",
+        "sha256": "9214697c3f950b7147fc30becb778528c6f1b3518b2c89fc6bb893b8e0f7eb2f",
+        "probe": {
+          "stdout": "9214697c3f950b7147fc30becb778528c6f1b3518b2c89fc6bb893b8e0f7eb2f  /data/app/com.orbita.infinita.debug-dNmDjlndnp4n15YpsY89Bg==/base.apk",
+          "error": null
+        }
+      }
+    ],
+    "packagePathProbe": {
+      "stdout": "package:/data/app/com.orbita.infinita.debug-dNmDjlndnp4n15YpsY89Bg==/base.apk",
+      "error": null
+    },
+    "localAPK": {
+      "path": "C:\\Projetos\\OrbitaInfinita\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
+      "sha256": "9214697c3f950b7147fc30becb778528c6f1b3518b2c89fc6bb893b8e0f7eb2f",
+      "matchesInstalledBase": true
+    },
+    "measurementScope": {
+      "memoryAndGfxinfo": "debug application process; WebView renderer may run separately",
+      "renderPrep": "JavaScript command preparation; not GPU execution time",
+      "touchLatency": "not measured by this runner",
+      "gpuTime": "not measured by this runner"
+    },
+    "screenCaptureMode": "disabled",
+    "screenBefore": {
+      "error": null,
+      "wakefulness": "Awake",
+      "display": "ON",
+      "gameFocused": false,
+      "awake": true
+    },
+    "surfaceSetup": {
+      "stdout": "",
+      "error": null
+    }
+  },
+  "screenSamples": [
+    {
+      "elapsedWallSeconds": 5.97,
+      "error": null,
+      "wakefulness": "Awake",
+      "display": "ON",
+      "gameFocused": false,
+      "awake": true
+    }
+  ],
+  "surfaceWindows": []
+}

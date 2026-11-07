@@ -47,13 +47,13 @@
   let save = loadSave();
   let W = 0, H = 0, dpr = 1, safeBottom = 0, last = 0, state = 'menu';
   let stars = [], nebulae = [], comets = [], planets = [], particles = [], trail = [], asteroids = [], collectibles = [], phenomena = [];
-  let ship, current, targets = [], score = 0, streak = 0, cameraY = 0, cameraTargetY = 0;
+  let ship, current, targets = [], score = 0, streak = 0, cameraY = 0, cameraTargetY = 0, runBest = 0;
   let holding = false, charge = .35, aimStartX = 0, aimStartY = 0, continued = false, runDust = 0, phaseCharges = 0, runShieldUsed = false;
   let specialEvent = null;
   let runSeed = 0, random = Math.random;
   let audioCtx = null, musicTimer = null, musicStep = 0;
   const STEP = 1 / 120, MAX_FRAME_TIME = .25;
-  let frameId = 0, accumulator = 0, appBackground = false;
+  let frameId = 0, accumulator = 0, appBackground = false, lastRafTime = 0;
   let viewportW = 0, viewportH = 0, viewScale = 1, viewX = 0, viewY = 0, menuLayout = true;
   let activePointer = null, backgroundGradient = null;
   let trailSampleTime = 0;
@@ -63,10 +63,14 @@
   const bodySprites = new Map();
   const backgroundLayer = document.createElement('canvas');
   const backgroundCtx = backgroundLayer.getContext('2d', { alpha: false });
-  let backgroundStamp = -Infinity, backgroundCamera = NaN;
+  const starLayer = document.createElement('canvas');
+  const starCtx = starLayer.getContext('2d');
+  let backgroundStamp = -Infinity;
   const prediction = { points: new Float64Array(184 * 2), count: 0, outcome: 'open', stamp: -Infinity };
   let qualityController = null, benchmarkRunner = null, pixiRenderer = null;
   let rendererName = 'canvas', presentationEnabled = false, presentation = null, benchmarkMutation = false;
+  let rendererReady = Promise.resolve('canvas');
+  let nativeFrameRate = -1;
   let lastPresented = 0, overlayEnabled = false, loggingPerformance = false, benchmarkSaveIsolated = false;
   let benchmarkSeed = 12345, benchmarkVisualRandom = null, resultTimer = 0;
   const scene = {}, renderCounters = { backgrounds: 0, bodies: 0 };
@@ -75,14 +79,23 @@
   const recorder = new window.OrbitaPerformance.Recorder({ emit(result) {
     if (loggingPerformance) console.info('[OrbitaPerf] ' + JSON.stringify(result));
     const overlay = document.querySelector('#performance-overlay');
-    if (overlayEnabled && overlay) overlay.textContent = `${result.fps} FPS · p95 ${result.frameP95} ms · ${currentQuality().label || 'Balanceada'}`;
+    if (overlayEnabled && overlay) overlay.textContent = `${result.fps} FPS JS · p95 ${result.frameP95} ms · ${currentQuality().label || 'Balanceada'}`;
     renderCounters.backgrounds = renderCounters.bodies = 0;
   } });
-  window.OrbitaMeasurePerformance = () => {
+  window.OrbitaMeasurePerformance = async () => {
+    await rendererReady;
     loggingPerformance = true;
     recorder.start({ scenario: 'manual', renderer: rendererName, profile: qualityController?.resolved || 'balanced', durationMs: 15000, warmupMs: 0 });
   };
-  function resetPerformanceWindow() { if (!benchmarkRunner?.running) recorder.suspend(); }
+  function resetPerformanceWindow() {
+    if (!benchmarkRunner?.running) {
+      recorder.suspend();
+      if (recorder.options) {
+        recorder.options.renderer = rendererName;
+        recorder.options.profile = qualityController?.resolved || 'balanced';
+      }
+    }
+  }
 
   function loadSave() {
     try { return { ...defaults, ...JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') }; }
@@ -249,6 +262,7 @@
   function begin() {
     if (benchmarkRunner?.running && !benchmarkMutation) return;
     clearTimeout(resultTimer); presentation?.reset();
+    runBest = Math.max(0, Number(save.best) || 0);
     document.activeElement?.blur(); shell.scrollTo(0, 0);
     cancelAim();
     score = 0; streak = 0; continued = false; holding = false; charge = .35; runDust = 0; phaseCharges = 0; runShieldUsed = false; specialEvent = null;
@@ -481,7 +495,7 @@
     if (state === 'over') { updateParticles(dt); return; }
     if (state !== 'playing') return;
     const cameraDelta = cameraTargetY - cameraY;
-    cameraY += cameraDelta * Math.min(1, worldDt * 3.5);
+    cameraY += cameraDelta * Math.min(1, dt * 3.5);
     if (Math.abs(cameraDelta) < .35) cameraY = cameraTargetY;
     planets.forEach(p => p.pulse += worldDt * 1.35);
     planets.forEach(p => { if (p !== current) movePlanetOnOrbit(p, worldDt); });
@@ -579,6 +593,7 @@
   }
 
   function land(p) {
+    const previousToast = ui.toast.textContent;
     const speed = Math.hypot(ship.vx, ship.vy);
     const centerHit = speed < 480;
     score += 1; streak = centerHit ? streak + 1 : 0;
@@ -605,6 +620,17 @@
     collectibles = [];
     phenomena = [];
     spawnTargets();
+    if (score === runBest + 1 && !benchmarkSaveIsolated) {
+      const hint = ui.toast.textContent !== previousToast ? ` ${ui.toast.textContent}` : '';
+      toast(`NOVO RECORDE · ${score} ${score === 1 ? 'PLANETA' : 'PLANETAS'}.${hint}`);
+    }
+  }
+
+  function resultMessage() {
+    if (score > runBest) return 'Novo recorde. O próximo planeta espera.';
+    if (score > 0 && score === runBest) return 'Recorde igualado. Mais um planeta para superar.';
+    if (runBest > 0) return `Próxima meta: superar ${runBest} ${runBest === 1 ? 'planeta' : 'planetas'}.`;
+    return 'A próxima órbita é sua.';
   }
 
   function lose() {
@@ -620,7 +646,7 @@
     ping(110, .22, 'sawtooth');
     resultTimer = setTimeout(() => {
       ui.final.textContent = score;
-      ui.result.textContent = score >= save.best && score > 0 ? 'Novo recorde. O próximo planeta espera.' : score < 3 ? 'A próxima órbita é sua.' : 'Você chegou mais longe desta vez.';
+      ui.result.textContent = resultMessage();
       ui.continueButton.style.display = continued ? 'none' : 'flex';
       ui.over.classList.add('active');
     }, 420);
@@ -741,20 +767,29 @@
     if (backgroundLayer.width !== width || backgroundLayer.height !== height) {
       backgroundLayer.width = width; backgroundLayer.height = height;
       backgroundCtx.setTransform(width / W, 0, 0, height / H, 0, 0);
+      starLayer.width = width; starLayer.height = height;
+      starCtx.setTransform(width / W, 0, 0, height / H, 0, 0);
       backgroundGradient = null; backgroundStamp = -Infinity;
     }
-    // Twinkle/drift are slow. Preserve full-rate parallax whenever the camera moves.
-    if (time - backgroundStamp >= currentQuality().backgroundInterval || renderCameraY !== backgroundCamera) {
-      if (recorder.active) renderCounters.backgrounds++;
-      if (!backgroundGradient) {
-        backgroundGradient = backgroundCtx.createRadialGradient(W * .5, H * .32, 0, W * .5, H * .35, H * .9);
-        backgroundGradient.addColorStop(0, '#171944'); backgroundGradient.addColorStop(.58, '#090b23'); backgroundGradient.addColorStop(1, '#050615');
-      }
+    if (!backgroundGradient) {
+      backgroundGradient = backgroundCtx.createRadialGradient(W * .5, H * .32, 0, W * .5, H * .35, H * .9);
+      backgroundGradient.addColorStop(0, '#171944'); backgroundGradient.addColorStop(.58, '#090b23'); backgroundGradient.addColorStop(1, '#050615');
       backgroundCtx.fillStyle = backgroundGradient; backgroundCtx.fillRect(0, 0, W, H);
-      drawNebulae(time, backgroundCtx, renderCameraY); drawStars(time, backgroundCtx, renderCameraY);
-      backgroundStamp = time; backgroundCamera = renderCameraY;
+    }
+    // Camera movement changes only image placement. Twinkle uses one reusable periodic tile.
+    if (time - backgroundStamp >= currentQuality().backgroundInterval) {
+      if (recorder.active) renderCounters.backgrounds++;
+      starCtx.clearRect(0, 0, W, H);
+      drawStars(time, starCtx, 0, true);
+      backgroundStamp = time;
     }
     ctx.drawImage(backgroundLayer, 0, 0, W, H);
+    // Each nebula already owns a cached gradient sprite and has its own wrapping period.
+    drawNebulae(time, ctx, renderCameraY);
+    const offset = ((renderCameraY * .12) % H + H) % H;
+    const remaining = H - offset, sourceY = offset * height / H;
+    ctx.drawImage(starLayer, 0, sourceY, width, height - sourceY, 0, 0, W, remaining);
+    if (offset > 0) ctx.drawImage(starLayer, 0, 0, width, sourceY, 0, remaining, W, offset);
   }
 
   function inCamera(entity, radius) {
@@ -762,7 +797,7 @@
     return entity.x + radius >= 0 && entity.x - radius <= W && y + radius >= 0 && y - radius <= H;
   }
 
-  function drawStars(time, target = ctx, renderCameraY = cameraY) {
+  function drawStars(time, target = ctx, renderCameraY = cameraY, periodic = false) {
     target.save();
     const count = Math.ceil(stars.length * currentQuality().starScale);
     for (let i = 0; i < count; i++) {
@@ -770,6 +805,9 @@
       const y = ((s.y - renderCameraY * .12) % H + H) % H;
       target.globalAlpha = s.a * (.75 + Math.sin(time * .0015 + s.p) * .25);
       target.fillStyle = '#dfe5ff'; target.beginPath(); target.arc(s.x, y, s.r, 0, TAU); target.fill();
+      if (periodic && (y < s.r || y + s.r > H)) {
+        target.beginPath(); target.arc(s.x, y < s.r ? y + H : y - H, s.r, 0, TAU); target.fill();
+      }
     }
     target.restore();
   }
@@ -1353,6 +1391,7 @@
   if ('ResizeObserver' in window) new ResizeObserver(scheduleResize).observe(shell);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) pauseRun();
+    else if (benchmarkRunner?.running && state === 'suspended' && !appBackground) resumeRun();
     else wakeLoop();
   });
   window.addEventListener('orbita-app-pause', () => { appBackground = true; pauseRun(); });
@@ -1368,10 +1407,22 @@
 
   function requestFrame() {
     if (!frameId && !document.hidden && !appBackground) frameId = requestAnimationFrame(loop);
+    notifyNativeCadence();
+  }
+
+  function notifyNativeCadence() {
+    if (!window.OrbitaNativeDisplay?.setFrameRate) return;
+    const rate = frameId && rendererName === 'pixi' && state !== 'paused' && state !== 'suspended' && !panelOpen()
+      ? qualityController?.targetFPS || 60 : 0;
+    if (rate !== nativeFrameRate) {
+      nativeFrameRate = rate;
+      try { window.OrbitaNativeDisplay.setFrameRate(rate); } catch {}
+    }
   }
 
   function stopLoop() {
-    cancelAnimationFrame(frameId); frameId = 0; last = 0; accumulator = 0;
+    cancelAnimationFrame(frameId); frameId = 0; last = 0; accumulator = 0; lastRafTime = 0;
+    notifyNativeCadence();
     resetPerformanceWindow();
   }
 
@@ -1404,6 +1455,10 @@
     frameId = 0;
     if (document.hidden || appBackground) { stopLoop(); return; }
     if (qualityDirty) { qualityDirty = false; resize(); lastPresented = 0; }
+    // A fixture/new run may reset the simulation clock inside update(). It must not
+    // hide that work from presentation statistics or automatic quality decisions.
+    const frameElapsed = lastRafTime ? Math.max(0, (t - lastRafTime) / 1000) : 0;
+    lastRafTime = t;
     const elapsed = Math.max(0, (t - last) / 1000); last = t;
     const measureStart = recorder.active ? performance.now() : 0;
     advanceFrame(elapsed);
@@ -1413,13 +1468,13 @@
     const targetFPS = qualityController?.targetFPS || 60;
     const presented = targetFPS !== 30 || !lastPresented || t - lastPresented >= 1000 / targetFPS - .5;
     if (presented) { draw(t); lastPresented = t; }
-    if (qualityController && !benchmarkRunner?.running) qualityController.observe(elapsed * 1000);
-    if (recorder.active) recorder.frame({ elapsedMs: elapsed * 1000,
+    if (qualityController && !benchmarkRunner?.running) qualityController.observe(frameElapsed * 1000);
+    if (recorder.active) recorder.frame({ elapsedMs: frameElapsed * 1000,
       updateMs: afterUpdate - measureStart, renderMs: performance.now() - afterPrediction, presented, state,
       counters: { ...renderCounters, pixels: canvas.width * canvas.height, renderer: rendererName, quality: qualityController?.resolved || 'balanced' } });
     benchmarkRunner?.afterFrame();
     if (state !== 'paused' && state !== 'suspended' && !panelOpen()) requestFrame();
-    else { cancelAnimationFrame(frameId); frameId = 0; }
+    else { cancelAnimationFrame(frameId); frameId = 0; notifyNativeCadence(); }
   }
 
   async function loadLocalScript(src) {
@@ -1432,25 +1487,30 @@
 
   async function setRenderer(name) {
     if (name === rendererName && (name === 'canvas' || pixiRenderer)) return rendererName;
-    stopLoop();
-    if (pixiRenderer) { pixiRenderer.destroy(); pixiRenderer = null; }
-    rendererName = 'canvas'; canvas.style.opacity = '';
     if (name === 'pixi') {
+      let next = null, failure = null;
       try {
         if (!window.PIXI) await loadLocalScript('vendor/pixi-8.22.0.min.js');
         if (!window.OrbitaPixiRenderer) await loadLocalScript('pixi-renderer.js');
-        pixiRenderer = await window.OrbitaPixiRenderer.create({ host: shell, width: viewportW, height: viewportH,
+        next = await window.OrbitaPixiRenderer.create({ host: shell, width: viewportW, height: viewportH,
           resolution: dpr, planetBody, onError(error) {
+            failure = error;
+            if (pixiRenderer !== next || !next) return;
             console.info('[OrbitaBench] ' + JSON.stringify({ type: 'renderer-fallback', message: String(error?.message || error) }));
-            if (benchmarkRunner?.running) benchmarkRunner.stop('renderer-error');
-            else setRenderer('canvas');
+            setRenderer('canvas').then(() => { if (benchmarkRunner?.running) return benchmarkRunner.stop('renderer-error'); }).catch(() => {});
           } });
+        if (failure || !next.render(displayScene(), performance.now())) throw failure || new Error('WebGL did not present its first frame');
+        stopLoop(); pixiRenderer = next;
         rendererName = 'pixi'; canvas.style.opacity = '0';
       } catch (error) {
-        if (pixiRenderer) pixiRenderer.destroy();
+        next?.destroy();
         pixiRenderer = null; canvas.style.opacity = ''; rendererName = 'canvas';
         console.info('[OrbitaBench] ' + JSON.stringify({ type: 'renderer-fallback', message: String(error?.message || error) }));
       }
+    } else {
+      stopLoop();
+      if (pixiRenderer) { pixiRenderer.destroy(); pixiRenderer = null; }
+      rendererName = 'canvas'; canvas.style.opacity = '';
     }
     wakeLoop(); return rendererName;
   }
@@ -1458,6 +1518,7 @@
   let qualityDirty = false;
   function applyQuality() {
     backgroundStamp = -Infinity; prediction.stamp = -Infinity;
+    resetPerformanceWindow();
     qualityDirty = true;
     const select = document.querySelector('#quality-select');
     select.value = qualityController.choice;
@@ -1482,7 +1543,7 @@
         capture() {
           const saved = { save, renderer: rendererName, quality: qualityController?.choice, cap30: qualityController?.cap30,
             state, W, H, stars, nebulae, comets, planets, particles, trail, asteroids, collectibles, phenomena,
-            ship, current, targets, score, streak, cameraY, cameraTargetY, runDust, specialEvent, random, runSeed,
+            ship, current, targets, score, streak, cameraY, cameraTargetY, runDust, specialEvent, random, runSeed, runBest,
             continued, charge, phaseCharges, runShieldUsed, resultCopy: ui.result.textContent, continueDisplay: ui.continueButton.style.display };
           benchmarkSaveIsolated = true; save = JSON.parse(JSON.stringify(save)); save.sound = false;
           save.shields = save.boosters = save.runs = 0; loggingPerformance = true;
@@ -1491,7 +1552,7 @@
         async restore(saved) {
           clearTimeout(resultTimer); stopLoop(); stopMusic();
           ({ save, W, H, stars, nebulae, comets, planets, particles, trail, asteroids, collectibles, phenomena,
-            ship, current, targets, score, streak, cameraY, cameraTargetY, runDust, specialEvent, random, runSeed,
+            ship, current, targets, score, streak, cameraY, cameraTargetY, runDust, specialEvent, random, runSeed, runBest,
             continued, charge, phaseCharges, runShieldUsed } = saved);
           state = saved.state === 'playing' ? 'suspended' : saved.state;
           benchmarkSaveIsolated = false; benchmarkVisualRandom = null; holding = false; activePointer = null;
@@ -1535,7 +1596,7 @@
         burst: count => burst(current.x, current.y - 100, '#6ee7ff', count, 150)
       }
     });
-    window.OrbitaBenchmark = options => benchmarkRunner.start(options);
+    window.OrbitaBenchmark = async options => { await rendererReady; return benchmarkRunner.start(options); };
     document.querySelector('#stop-benchmark').addEventListener('click', () => benchmarkRunner.stop());
   }
 
@@ -1554,4 +1615,8 @@
   applyQuality();
 
   resize(); syncUI(); wakeLoop();
+  const webGLAvailable = typeof window.WebGLRenderingContext === 'function' || typeof window.WebGL2RenderingContext === 'function';
+  if (webGLAvailable && !/[?&]benchmark=1(?:&|$)/.test(window.location?.search || '')) {
+    rendererReady = setRenderer('pixi');
+  }
 })();

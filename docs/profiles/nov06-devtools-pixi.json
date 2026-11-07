@@ -1,0 +1,35 @@
+{
+  "renderer": "pixi",
+  "before": {
+    "url": "file:///android_asset/index.html?benchmark=1",
+    "pixiVersion": "8.22.0",
+    "renderer": "pixi",
+    "width": 1386,
+    "height": 866,
+    "cssWidth": 1098.2857666015625,
+    "cssHeight": 686.2857666015625,
+    "antialias": true,
+    "rendererInfo": "Mali-G51",
+    "jsHeap": {
+      "used": 26000000,
+      "total": 44700000
+    }
+  },
+  "after": {
+    "url": "file:///android_asset/index.html?benchmark=1",
+    "pixiVersion": "8.22.0",
+    "renderer": "pixi",
+    "width": 1386,
+    "height": 866,
+    "cssWidth": 1098.2857666015625,
+    "cssHeight": 686.2857666015625,
+    "antialias": true,
+    "rendererInfo": "Mali-G51",
+    "jsHeap": {
+      "used": 26000000,
+      "total": 44700000
+    }
+  },
+  "sampleWallMs": 8959.396,
+  "scope": "Game WebView DevTools CPU sampler; not GPU time or physical touch-to-photon latency. This run includes profiling/readback and is excluded from performance A/B."
+}

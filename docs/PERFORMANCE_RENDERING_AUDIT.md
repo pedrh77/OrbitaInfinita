@@ -1,5 +1,7 @@
 # Fluidez: implementação e evidências — 02/11/2026
 
+> Registro histórico. A revisão atual, incluindo comparação física, apresentação Android e evolução para Pixi, está em [PERFORMANCE_2026-11-06.md](PERFORMANCE_2026-11-06.md). O estado de entrega abaixo descreve a etapa anterior.
+
 ## Estado da entrega
 
 Branch: `performance/optimize-rendering`, partindo de `40f5996`. Canvas continua sendo o renderizador normal. As mudanças estão locais; não foram publicadas nem mescladas na main.

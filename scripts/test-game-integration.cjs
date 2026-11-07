@@ -13,6 +13,94 @@ const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve();
 (async () => {
   {
     const h = harness();
+    await h.window.OrbitaBenchmark({ scenario:'start', renderer:'canvas', quality:'balanced', seconds:5 });
+    h.game.fixture(); h.game.wakeLoop();
+    for (let i=0;i<650 && h.game.benchmark().running;i++) {
+      h.tick(); h.consume(20); h.game.wakeLoop();
+    }
+    const result = h.logs.filter(line => line.startsWith('[OrbitaPerf] ')).map(line => JSON.parse(line.slice(13)))[0];
+    assert.ok(result.fps < 30, 'resetting simulation cannot disguise 20 ms of main-thread work');
+    assert.ok(result.frameP95 > 36 && result.frameP95 < 37);
+    report('render statistics retain actual RAF intervals across simulation-clock resets');
+  }
+  {
+    const h = harness({ pixiFactory: async () => ({ render: () => true, resize() {}, destroy() {} }) });
+    await h.game.rendererReady();
+    assert.equal(h.nativeRates.at(-1), 60);
+    const transitions = h.nativeRates.length;
+    for (let i=0;i<60;i++) h.tick();
+    assert.equal(h.nativeRates.length, transitions, 'bridge is not called once per frame');
+    h.game.openShop(); h.tick(); assert.equal(h.nativeRates.at(-1), 0);
+    h.game.closeShop(); assert.equal(h.nativeRates.at(-1), 60);
+    select(h, 'eco', true); h.tick(); assert.equal(h.nativeRates.at(-1), 30);
+    h.game.pauseRun(); h.game.stopLoop(); assert.equal(h.nativeRates.at(-1), 0);
+    report('native cadence follows rendering, sleeps behind panels and honors 30 FPS without per-frame bridge calls');
+  }
+  {
+    for (const nativeFirst of [true, false]) {
+      const h = harness();
+      await h.window.OrbitaBenchmark({ scenario:'aim', renderer:'canvas', seconds:5 });
+      h.document.hidden = true; h.document.handlers.visibilitychange(); h.window.handlers['orbita-app-pause']();
+      assert.equal(h.snapshot().state, 'suspended');
+      if (nativeFirst) h.window.handlers['orbita-app-resume']();
+      h.document.hidden = false; h.document.handlers.visibilitychange();
+      if (!nativeFirst) h.window.handlers['orbita-app-resume']();
+      assert.equal(h.snapshot().state, 'playing', 'both Android/DOM visibility orders must resume diagnostics');
+      for (let i=0;i<650 && h.game.benchmark().running;i++) { h.tick(); await flush(); }
+      await flush(); assert.equal(h.game.benchmark().running, false);
+      assert.ok(h.logs.some(line => line.includes('benchmark-complete')));
+    }
+    report('background diagnostics resume under either Android and DOM visibility event order');
+  }
+  {
+    let onError, destroyed = 0, rendered = 0;
+    const h = harness({ pixiFactory: async options => {
+      onError = options.onError;
+      return { render() { rendered++; return true; }, resize() {}, destroy() { destroyed++; } };
+    } });
+    await h.game.rendererReady();
+    assert.equal(h.game.renderer(), 'pixi'); assert.ok(rendered > 0, 'Canvas is hidden only after a successful WebGL frame');
+    assert.equal(h.document.querySelector('#game').style.opacity, '0');
+    h.game.fixture(); const before = h.snapshot();
+    onError(new Error('simulated context loss')); await flush();
+    assert.equal(h.game.renderer(), 'canvas'); assert.equal(destroyed, 1);
+    assert.equal(h.document.querySelector('#game').style.opacity, '');
+    assert.deepEqual(h.snapshot(), before, 'graphics failure cannot reset the active run');
+    report('preferred Pixi presents before switching; context loss preserves the run on Canvas');
+  }
+  {
+    const failed = harness({ pixiFactory: async () => { throw new Error('unsupported WebGL'); } });
+    await failed.game.rendererReady(); assert.equal(failed.game.renderer(), 'canvas');
+    const diagnostic = harness({ search: '?benchmark=1', pixiFactory: async () => { throw new Error('must not initialize'); } });
+    await diagnostic.game.rendererReady(); assert.equal(diagnostic.game.renderer(), 'canvas'); assert.equal(diagnostic.logs.length, 0);
+    report('unavailable WebGL falls back; diagnostic URL leaves renderer selection to the runner');
+  }
+  {
+    const normal = harness(), aiming = harness();
+    for (const h of [normal, aiming]) { h.game.fixture({ ship: { mode: 'orbit' } }); h.game.setCameraTarget(400); }
+    aiming.game.press({ pointerId: 1, clientX: 180, clientY: 700, cancelable: true, preventDefault() {} });
+    for (let i = 0; i < 120; i++) { normal.game.advanceFrame(1 / 120); aiming.game.advanceFrame(1 / 120); }
+    near(normal.game.camera(), aiming.game.camera(), 'aim cannot slow camera presentation');
+    assert.ok(aiming.game.camera() > 380 && aiming.game.camera() < 400);
+    near(normal.snapshot().remaining, aiming.snapshot().remaining, 'event timer remains real-time');
+    report('camera settles at the same real-time rate while aiming');
+  }
+  {
+    const h = harness(); h.game.setBest(2); h.game.begin();
+    const land = () => h.game.land(h.snapshot().planets.find(p => p.target), true);
+    land(); assert.match(h.game.resultMessage(), /superar 2/);
+    land(); assert.match(h.game.resultMessage(), /Recorde igualado/);
+    const toast = h.document.querySelector('#toast'), before = toast.textWrites;
+    land(); assert.match(h.game.resultMessage(), /Novo recorde/); assert.equal(h.game.best(), 3);
+    assert.match(toast.textContent, /NOVO RECORDE/); assert.match(toast.textContent, /fase quântica/, 'record cannot suppress new gameplay instructions');
+    const afterRecord = toast.textWrites;
+    assert.ok(afterRecord > before);
+    land(); assert.equal(h.game.best(), 4); assert.equal(toast.textWrites, afterRecord, 'one real record notification per run');
+    assert.equal(h.snapshot().coins, 32, 'perfect landing rewards remain 5, 7, 9 and 11');
+    report('landing rewards retain persisted best; ties and new records get truthful feedback');
+  }
+  {
+    const h = harness();
     assert.equal(h.snapshot().state, 'menu'); assert.equal(h.frames.size, 1);
     h.game.openShop(); h.tick();
     assert.equal(h.frames.size, 0, 'covered menu stops after its pending frame');
