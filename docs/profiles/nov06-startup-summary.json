@@ -1,0 +1,513 @@
+{
+  "scope": "Android atrace app sections; inclusive elapsed durations, not exclusive CPU or GPU execution time",
+  "processes": [
+    {
+      "pid": "21708",
+      "sectionsByMaximumDuration": [
+        {
+          "section": "DrawFrame",
+          "count": 3,
+          "totalMs": 19.64,
+          "maxMs": 6.96
+        },
+        {
+          "section": "waiting for GPU completion 27",
+          "count": 1,
+          "totalMs": 5.67,
+          "maxMs": 5.67
+        },
+        {
+          "section": "waitForever",
+          "count": 3,
+          "totalMs": 16.47,
+          "maxMs": 5.65
+        },
+        {
+          "section": "waiting for GPU completion 29",
+          "count": 1,
+          "totalMs": 5.61,
+          "maxMs": 5.61
+        },
+        {
+          "section": "waiting for GPU completion 28",
+          "count": 1,
+          "totalMs": 5.25,
+          "maxMs": 5.25
+        },
+        {
+          "section": "WebViewFunctor::drawGl",
+          "count": 3,
+          "totalMs": 9.25,
+          "maxMs": 3.5
+        },
+        {
+          "section": "Choreographer#doFrame",
+          "count": 6,
+          "totalMs": 7.44,
+          "maxMs": 2.5
+        },
+        {
+          "section": "eglSwapBuffersWithDamageKHR",
+          "count": 3,
+          "totalMs": 5.82,
+          "maxMs": 2.4
+        },
+        {
+          "section": "queueBuffer",
+          "count": 3,
+          "totalMs": 3.4,
+          "maxMs": 1.45
+        },
+        {
+          "section": "animation",
+          "count": 10,
+          "totalMs": 7.66,
+          "maxMs": 1.3
+        },
+        {
+          "section": "traversal",
+          "count": 3,
+          "totalMs": 3.12,
+          "maxMs": 1.18
+        },
+        {
+          "section": "draw",
+          "count": 3,
+          "totalMs": 2.7,
+          "maxMs": 1.03
+        },
+        {
+          "section": "transact[android.app.trust.ITrustManager:8]",
+          "count": 1,
+          "totalMs": 0.67,
+          "maxMs": 0.67
+        },
+        {
+          "section": "Record View#draw()",
+          "count": 3,
+          "totalMs": 0.83,
+          "maxMs": 0.3
+        },
+        {
+          "section": "dequeueBuffer",
+          "count": 3,
+          "totalMs": 0.79,
+          "maxMs": 0.28
+        },
+        {
+          "section": "query",
+          "count": 30,
+          "totalMs": 1.14,
+          "maxMs": 0.2
+        },
+        {
+          "section": "syncFrameState",
+          "count": 3,
+          "totalMs": 0.2,
+          "maxMs": 0.07
+        },
+        {
+          "section": "prepareTree",
+          "count": 3,
+          "totalMs": 0.15,
+          "maxMs": 0.06
+        },
+        {
+          "section": "Trace GPU completion fence 27",
+          "count": 1,
+          "totalMs": 0.03,
+          "maxMs": 0.03
+        },
+        {
+          "section": "input",
+          "count": 3,
+          "totalMs": 0.08,
+          "maxMs": 0.03
+        },
+        {
+          "section": "Trace GPU completion fence 28",
+          "count": 1,
+          "totalMs": 0.03,
+          "maxMs": 0.03
+        },
+        {
+          "section": "Trace GPU completion fence 29",
+          "count": 1,
+          "totalMs": 0.03,
+          "maxMs": 0.03
+        },
+        {
+          "section": "flush commands",
+          "count": 3,
+          "totalMs": 0.06,
+          "maxMs": 0.02
+        },
+        {
+          "section": "setSurfaceDamage",
+          "count": 3,
+          "totalMs": 0.05,
+          "maxMs": 0.02
+        },
+        {
+          "section": "WebViewFunctor::sync",
+          "count": 3,
+          "totalMs": 0.04,
+          "maxMs": 0.01
+        },
+        {
+          "section": "eglBeginFrame",
+          "count": 3,
+          "totalMs": 0.02,
+          "maxMs": 0.01
+        },
+        {
+          "section": "WebViewChromiumFactoryProvider.startYourEngines",
+          "count": 8,
+          "totalMs": 0.03,
+          "maxMs": 0.0
+        },
+        {
+          "section": "notifyFramePending",
+          "count": 4,
+          "totalMs": 0.01,
+          "maxMs": 0.0
+        },
+        {
+          "section": "setBuffersDimensions",
+          "count": 3,
+          "totalMs": 0.0,
+          "maxMs": 0.0
+        },
+        {
+          "section": "HWC release fence 27 has signaled",
+          "count": 1,
+          "totalMs": 0.0,
+          "maxMs": 0.0
+        },
+        {
+          "section": "setBuffersTransform",
+          "count": 3,
+          "totalMs": 0.01,
+          "maxMs": 0.0
+        },
+        {
+          "section": "HWC release fence 28 has signaled",
+          "count": 1,
+          "totalMs": 0.0,
+          "maxMs": 0.0
+        },
+        {
+          "section": "HWC release fence 29 has signaled",
+          "count": 1,
+          "totalMs": 0.0,
+          "maxMs": 0.0
+        }
+      ]
+    },
+    {
+      "pid": "22048",
+      "sectionsByMaximumDuration": [
+        {
+          "section": "WebViewChromium.init",
+          "count": 6,
+          "totalMs": 208.98,
+          "maxMs": 146.55
+        },
+        {
+          "section": "DrawFrame",
+          "count": 241,
+          "totalMs": 2228.53,
+          "maxMs": 130.35
+        },
+        {
+          "section": "WebViewFunctor::drawGl",
+          "count": 241,
+          "totalMs": 1112.62,
+          "maxMs": 125.45
+        },
+        {
+          "section": "Choreographer#doFrame",
+          "count": 549,
+          "totalMs": 1374.54,
+          "maxMs": 119.94
+        },
+        {
+          "section": "traversal",
+          "count": 242,
+          "totalMs": 740.7,
+          "maxMs": 119.4
+        },
+        {
+          "section": "draw",
+          "count": 242,
+          "totalMs": 561.13,
+          "maxMs": 118.64
+        },
+        {
+          "section": "WebViewChromiumFactoryProvider.startYourEngines",
+          "count": 708,
+          "totalMs": 108.25,
+          "maxMs": 98.9
+        },
+        {
+          "section": "WebViewChromiumAwInit.startChromiumLocked",
+          "count": 1,
+          "totalMs": 98.34,
+          "maxMs": 98.34
+        },
+        {
+          "section": "AwBrowserProcess.start",
+          "count": 1,
+          "totalMs": 80.87,
+          "maxMs": 80.87
+        },
+        {
+          "section": "AwBrowserProcess.startBrowserProcessesSync",
+          "count": 1,
+          "totalMs": 75.4,
+          "maxMs": 75.4
+        },
+        {
+          "section": "WebViewFactory.getProvider()",
+          "count": 1,
+          "totalMs": 74.29,
+          "maxMs": 74.29
+        },
+        {
+          "section": "WebViewChromium.initForReal",
+          "count": 6,
+          "totalMs": 93.71,
+          "maxMs": 43.41
+        },
+        {
+          "section": "AwContents.constructor",
+          "count": 6,
+          "totalMs": 88.75,
+          "maxMs": 41.85
+        },
+        {
+          "section": "WebViewFactory.getChromiumProviderClass()",
+          "count": 1,
+          "totalMs": 41.76,
+          "maxMs": 41.76
+        },
+        {
+          "section": "Startup",
+          "count": 1,
+          "totalMs": 30.6,
+          "maxMs": 30.6
+        },
+        {
+          "section": "WebViewFactory.loadNativeLibrary()",
+          "count": 1,
+          "totalMs": 26.31,
+          "maxMs": 26.31
+        },
+        {
+          "section": "WorkManagerInitializer",
+          "count": 1,
+          "totalMs": 25.24,
+          "maxMs": 25.24
+        },
+        {
+          "section": "WebViewFactoryProvider invocation",
+          "count": 1,
+          "totalMs": 25.22,
+          "maxMs": 25.22
+        },
+        {
+          "section": "WebViewChromiumFactoryProvider.initialize",
+          "count": 1,
+          "totalMs": 24.92,
+          "maxMs": 24.92
+        },
+        {
+          "section": "transact[android.app.IActivityManager:27]",
+          "count": 9,
+          "totalMs": 60.87,
+          "maxMs": 22.29
+        },
+        {
+          "section": "animation",
+          "count": 779,
+          "totalMs": 917.06,
+          "maxMs": 14.92
+        },
+        {
+          "section": "transact[android.app.IActivityManager:10]",
+          "count": 21,
+          "totalMs": 30.54,
+          "maxMs": 14.2
+        },
+        {
+          "section": "setSurface",
+          "count": 1,
+          "totalMs": 14.05,
+          "maxMs": 14.05
+        },
+        {
+          "section": "waiting for GPU completion 207",
+          "count": 1,
+          "totalMs": 13.16,
+          "maxMs": 13.16
+        },
+        {
+          "section": "waitForever",
+          "count": 254,
+          "totalMs": 1274.41,
+          "maxMs": 13.14
+        },
+        {
+          "section": "transact[android.content.pm.IPackageManager:3]",
+          "count": 79,
+          "totalMs": 132.5,
+          "maxMs": 13.01
+        },
+        {
+          "section": "transact[android.app.IActivityManager:15]",
+          "count": 1,
+          "totalMs": 12.66,
+          "maxMs": 12.66
+        },
+        {
+          "section": "waiting for GPU completion 42",
+          "count": 1,
+          "totalMs": 11.93,
+          "maxMs": 11.93
+        },
+        {
+          "section": "waiting for HWC release 42",
+          "count": 1,
+          "totalMs": 11.33,
+          "maxMs": 11.33
+        },
+        {
+          "section": "dequeueBuffer",
+          "count": 254,
+          "totalMs": 130.18,
+          "maxMs": 11.02
+        },
+        {
+          "section": "waiting for GPU completion 40",
+          "count": 1,
+          "totalMs": 10.63,
+          "maxMs": 10.63
+        },
+        {
+          "section": "waiting for GPU completion 206",
+          "count": 1,
+          "totalMs": 10.28,
+          "maxMs": 10.28
+        },
+        {
+          "section": "waiting for HWC release 12",
+          "count": 1,
+          "totalMs": 9.92,
+          "maxMs": 9.92
+        },
+        {
+          "section": "waiting for HWC release 11",
+          "count": 1,
+          "totalMs": 9.9,
+          "maxMs": 9.9
+        },
+        {
+          "section": "waiting for GPU completion 43",
+          "count": 1,
+          "totalMs": 9.86,
+          "maxMs": 9.86
+        },
+        {
+          "section": "waiting for HWC release 9",
+          "count": 1,
+          "totalMs": 9.78,
+          "maxMs": 9.78
+        },
+        {
+          "section": "waiting for HWC release 13",
+          "count": 1,
+          "totalMs": 9.72,
+          "maxMs": 9.72
+        },
+        {
+          "section": "waiting for HWC release 15",
+          "count": 1,
+          "totalMs": 9.71,
+          "maxMs": 9.71
+        },
+        {
+          "section": "waiting for HWC release 8",
+          "count": 1,
+          "totalMs": 9.68,
+          "maxMs": 9.68
+        },
+        {
+          "section": "waiting for HWC release 18",
+          "count": 1,
+          "totalMs": 9.64,
+          "maxMs": 9.64
+        },
+        {
+          "section": "waiting for HWC release 17",
+          "count": 1,
+          "totalMs": 9.61,
+          "maxMs": 9.61
+        },
+        {
+          "section": "waiting for HWC release 14",
+          "count": 1,
+          "totalMs": 9.55,
+          "maxMs": 9.55
+        },
+        {
+          "section": "waiting for HWC release 20",
+          "count": 1,
+          "totalMs": 9.53,
+          "maxMs": 9.53
+        },
+        {
+          "section": "waiting for HWC release 10",
+          "count": 1,
+          "totalMs": 9.4,
+          "maxMs": 9.4
+        },
+        {
+          "section": "waiting for GPU completion 34",
+          "count": 1,
+          "totalMs": 9.34,
+          "maxMs": 9.34
+        },
+        {
+          "section": "waiting for HWC release 7",
+          "count": 1,
+          "totalMs": 9.2,
+          "maxMs": 9.2
+        },
+        {
+          "section": "waiting for HWC release 19",
+          "count": 1,
+          "totalMs": 9.14,
+          "maxMs": 9.14
+        },
+        {
+          "section": "WebViewChromiumFactoryProvider.loadChromiumLibrary",
+          "count": 2,
+          "totalMs": 17.38,
+          "maxMs": 9.07
+        },
+        {
+          "section": "transact[android.view.IWindowSession:4]",
+          "count": 1,
+          "totalMs": 9.07,
+          "maxMs": 9.07
+        },
+        {
+          "section": "waiting for GPU completion 41",
+          "count": 1,
+          "totalMs": 9.05,
+          "maxMs": 9.05
+        }
+      ]
+    }
+  ]
+}

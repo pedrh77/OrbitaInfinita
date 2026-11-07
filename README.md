@@ -1,6 +1,8 @@
 # Órbita Infinita
 
-Protótipo mobile-first de jogo casual infinito feito em Canvas 2D.
+Um lançamento, uma nova órbita. Escolha direção e força, encontre seu caminho entre planetas e tente superar o próprio recorde.
+
+Jogo casual para navegador e Android, com renderização PixiJS/WebGL e Canvas 2D como alternativa automática. Os recursos gráficos acompanham o aplicativo, sem depender de CDN.
 
 ## Jogar
 
@@ -9,6 +11,18 @@ Protótipo mobile-first de jogo casual infinito feito em Canvas 2D.
 ## Como jogar
 
 Arraste a partir da nave para escolher direção e força. Solte para lançar e tente alcançar um novo planeta.
+
+## Novidades da versão 1.0.2
+
+- Renderização WebGL com sincronização da tela no Android para reduzir engasgos.
+- Câmera mais responsiva durante a mira, preservando a física do lançamento.
+- Mensagens de recorde que distinguem empate e superação.
+- Qualidade automática até Balanceada; Alta continua disponível nas configurações.
+- Recuperação automática para Canvas em caso de falha gráfica.
+
+No MatePad usado na validação, duas sessões de dez minutos registraram 14,5 FPS JavaScript no Canvas e 59,4 FPS na versão Pixi sincronizada. O p95 da apresentação Android amostrada passou de 83,3 para 16,7 ms. Esses resultados descrevem esse aparelho e cenário; ainda ocorrem picos na abertura.
+
+Veja o [histórico de mudanças](CHANGELOG.md) e o [relatório com método, resultados e limitações](docs/PERFORMANCE_2026-11-06.md).
 
 ## Android
 

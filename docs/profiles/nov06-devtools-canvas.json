@@ -1,0 +1,31 @@
+{
+  "renderer": "canvas",
+  "before": {
+    "url": "file:///android_asset/index.html?benchmark=1",
+    "renderer": "canvas",
+    "width": 1386,
+    "height": 866,
+    "cssWidth": 1098.2857666015625,
+    "cssHeight": 686.2857666015625,
+    "rendererInfo": null,
+    "jsHeap": {
+      "used": 19300000,
+      "total": 29400000
+    }
+  },
+  "after": {
+    "url": "file:///android_asset/index.html?benchmark=1",
+    "renderer": "canvas",
+    "width": 1386,
+    "height": 866,
+    "cssWidth": 1098.2857666015625,
+    "cssHeight": 686.2857666015625,
+    "rendererInfo": null,
+    "jsHeap": {
+      "used": 19300000,
+      "total": 29400000
+    }
+  },
+  "sampleWallMs": 8760.883,
+  "scope": "Game WebView DevTools CPU sampler; not GPU time or physical touch-to-photon latency. This run includes profiling/readback and is excluded from performance A/B."
+}

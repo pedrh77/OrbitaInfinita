@@ -8,14 +8,14 @@ const original = readFileSync(join(__dirname, '../dist/game.js'), 'utf8');
 const bootstrap = '  resize(); syncUI(); wakeLoop();';
 assert.equal(original.split(bootstrap).length, 2, 'test seam must match bootstrap exactly once');
 function harness(options = {}) {
-  const elements = new Map(), frames = new Map(), captures = new Set(), logs = [];
+  const elements = new Map(), frames = new Map(), captures = new Set(), logs = [], nativeRates = [];
   const size = { width: options.width || 390, height: options.height || 844 }, metrics = { transforms: 0, gradients: 0, arcs: 0, images: 0 };
   let now = 100, sequence = 0;
   const graphics = new Proxy({}, { get(t, k) {
     if (k in t) return t[k];
     if (k === 'createRadialGradient' || k === 'createLinearGradient') return () => { metrics.gradients++; return { addColorStop() {} }; };
     if (k === 'arc') return () => { metrics.arcs++; };
-    if (k === 'drawImage') return () => { metrics.images++; };
+    if (k === 'drawImage') return (...args) => { metrics.images++; if (options.captureImages) (metrics.imageCalls ||= []).push(args); };
     if (k === 'setTransform') return () => { metrics.transforms++; };
     return () => {};
   } });
@@ -43,6 +43,12 @@ function harness(options = {}) {
   document.activeElement = document.body;
   const storage = new Map([['orbita-infinita-v1', JSON.stringify({ sound: false })]]);
   const window = { handlers: {}, addEventListener(k, f) { this.handlers[k] = f; } };
+  window.OrbitaNativeDisplay = { setFrameRate(rate) { nativeRates.push(rate); } };
+  if (options.pixiFactory) {
+    window.WebGLRenderingContext = function () {};
+    window.PIXI = {}; window.OrbitaPixiRenderer = { create: options.pixiFactory };
+    window.location = { search: options.search || '' };
+  }
   class CachedPath {
     constructor() { this.points = []; }
     moveTo(x, y) { this.points.push([x, y]); }
@@ -58,8 +64,14 @@ function harness(options = {}) {
   const source = original.replace(bootstrap, `
     window.test = {
       STEP, begin, advanceFrame, advanceFlight, tracePrediction, resize, press, aim, release,
-      drawPrediction, drawBackground, drawPlanet, planetBody, burst, updateParticles, displayScene,
+      drawPrediction, drawBackground, drawPlanet, planetBody, burst, updateParticles, displayScene, land, resultMessage,
+      setBest(value) { save.best = value; },
+      best() { return save.best; },
+      camera() { return cameraY; },
+      setCameraTarget(value) { cameraTargetY = value; },
       benchmark() { return benchmarkRunner; },
+      renderer() { return rendererName; },
+      rendererReady() { return rendererReady; },
       quality() { return { choice: qualityController.choice, resolved: qualityController.resolved, targetFPS: qualityController.targetFPS }; },
       particleStats() { return { active: particles.length, pooled: particlePool.length }; },
       predictionStamp() { return prediction.stamp; },
@@ -85,8 +97,9 @@ function harness(options = {}) {
   `);
   for (const dependency of ['performance.js', 'presentation.js', 'benchmark.js']) vm.runInContext(readFileSync(join(__dirname, '../dist', dependency), 'utf8'), context);
   vm.runInContext(source, context);
-  return { game: window.test, document, window, size, metrics, captures, frames, storage, logs,
+  return { game: window.test, document, window, size, metrics, captures, frames, storage, logs, nativeRates,
     snapshot: () => JSON.parse(window.test.snapshot()),
+    consume(ms) { now += ms; },
     tick(ms = 1000 / 60) { const pending = [...frames.values()]; frames.clear(); now += ms; for (const fn of pending) fn(now); }
   };
 }
@@ -250,14 +263,29 @@ test('planet gradients are reused while dynamic planet position changes', () => 
   assert.equal(h.metrics.gradients, count, 'new planet object must not force a new gradient');
 });
 
-test('decorative background is cached at rest and follows a moving camera immediately', () => {
-  const h = harness(); h.game.drawBackground(0); const arcs = h.metrics.arcs, images = h.metrics.images;
+test('star tile is cached while parallax moves immediately without repainting the background', () => {
+  const h = harness({ captureImages: true }); h.game.drawBackground(0); const arcs = h.metrics.arcs;
+  const stationaryTile = h.metrics.imageCalls.at(-1);
   h.game.drawBackground(20);
   assert.equal(h.metrics.arcs, arcs, 'stars must reuse the cached background inside the balanced profile interval');
-  assert.equal(h.metrics.images, images + 1, 'cached frame is still composited');
+  assert.equal(h.metrics.imageCalls.at(-1)[0], stationaryTile[0], 'one star canvas is reused');
   h.game.drawBackground(75); assert.ok(h.metrics.arcs > arcs);
-  const refreshed = h.metrics.arcs;
-  h.game.setCamera(10); h.game.drawBackground(76); assert.ok(h.metrics.arcs > refreshed, 'parallax cannot wait for cache timeout');
+  const refreshed = h.metrics.arcs, gradients = h.metrics.gradients;
+  h.metrics.imageCalls.length = 0;
+  h.game.setCamera(10); h.game.drawBackground(76);
+  assert.equal(h.metrics.arcs, refreshed, 'moving camera must not redraw any star geometry');
+  assert.equal(h.metrics.gradients, gradients, 'moving camera must not rebuild the base gradient');
+  const tiles = h.metrics.imageCalls.filter(args => args.length === 9);
+  assert.equal(tiles.length, 2, 'periodic star tile is composed as two non-overlapping slices');
+  assert.equal(tiles[0][0], stationaryTile[0]); assert.equal(tiles[1][0], stationaryTile[0]);
+  near(tiles[0][2], 1.2, 'source parallax offset');
+  near(tiles[0][8] + tiles[1][8], h.size.height, 'slices cover the viewport exactly once');
+  near(tiles[1][6], tiles[0][8], 'slices meet without a vertical gap');
+  h.metrics.imageCalls.length = 0;
+  h.game.setCamera(-10); h.game.drawBackground(77);
+  assert.equal(h.metrics.arcs, refreshed, 'reverse camera movement still reuses geometry');
+  const reversed = h.metrics.imageCalls.filter(args => args.length === 9);
+  near(reversed[0][2], h.size.height - 1.2, 'negative parallax wraps inside the tile');
 });
 
 test('offscreen drawing is culled without removing gravitational influence', () => {

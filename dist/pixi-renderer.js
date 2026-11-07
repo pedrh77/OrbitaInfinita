@@ -1,4 +1,4 @@
-/* PixiJS 8 comparison renderer. Game state, physics, input and persistence stay outside this module. */
+/* PixiJS 8 WebGL renderer. Physics, input, persistence and Canvas fallback stay in game.js. */
 (() => {
   'use strict';
   const TAU = Math.PI * 2;
@@ -22,7 +22,7 @@
     const app = new P.Application();
     try {
       await app.init({ canvas, width, height, resolution, autoDensity: true, autoStart: false, sharedTicker: false,
-        preference: 'webgl', antialias: false, background: '#07091a', backgroundAlpha: 1,
+        preference: 'webgl', antialias: true, background: '#07091a', backgroundAlpha: 1,
         powerPreference: 'high-performance', hello: false });
       app.stop?.();
       host.appendChild(canvas);
@@ -528,5 +528,5 @@
     };
   }
 
-  window.OrbitaPixiRenderer = { create, prototype: true };
+  window.OrbitaPixiRenderer = { create, backend: 'pixi-webgl' };
 })();

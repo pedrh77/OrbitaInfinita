@@ -64,11 +64,14 @@ async function test(name, run) { await run(); console.log(`PASS: ${name}`); }
     for (const actual of results) assert.deepEqual(actual, results[0]);
   });
 
-  await test('flight restarts only after actual game-over and keeps seeded sequence', async () => {
+  await test('flight launches again after landing and resets the seeded run only after game-over', async () => {
     const h = harness(); await h.runner.start({ scenario: 'flight', seed: 10 });
     h.fixedStep(); assert.equal(h.calls.filter(call => call[0] === 'launch').length, 1);
-    h.state({ state: 'over', mode: 'flight' }); h.fixedStep();
+    h.state({ state: 'playing', mode: 'orbit' }); h.fixedStep();
     assert.equal(h.calls.filter(call => call[0] === 'launch').length, 2);
+    assert.equal(h.calls.filter(call => call[0] === 'reset').length, 1, 'landing keeps the current world');
+    h.state({ state: 'over', mode: 'flight' }); h.fixedStep();
+    assert.equal(h.calls.filter(call => call[0] === 'launch').length, 3);
     assert.equal(h.calls.filter(call => call[0] === 'reset').at(-1)[1].seed, 11);
     await h.runner.stop();
   });
@@ -81,6 +84,25 @@ async function test(name, run) { await run(); console.log(`PASS: ${name}`); }
     assert.deepEqual(resets.map(call => call[1].level), [0, 0, 25]);
     assert.equal(h.calls.filter(call => call[0] === 'launch').length, 1);
     await h.runner.stop();
+  });
+
+  await test('ten-minute run retains all windows and restores save; unsafe duration never captures', async () => {
+    const h = harness();
+    assert.equal(await h.runner.start({ scenario: 'long', seconds: 600 }), true);
+    assert.equal(h.recorder.options.durationMs, 600000);
+    h.recorder.warmLeft = 0;
+    for (let i = 0; i < 120; i++) h.frame(5);
+    assert.equal(h.runner.running, false);
+    assert.equal(h.runner.reports.length, 120);
+    assert.deepEqual(h.calls.filter(call => call[0] === 'restore'), [['restore', h.saved]]);
+    for (const seconds of [901, Infinity, NaN, 4]) {
+      const invalid = harness();
+      assert.equal(await invalid.runner.start({ scenario: 'long', seconds }), false);
+      assert.equal(invalid.calls.length, 0);
+    }
+    const maximum = harness();
+    assert.equal(await maximum.runner.start({ scenario: 'long', seconds: 900 }), true);
+    await maximum.runner.stop();
   });
 
   await test('failed Pixi initialization restores state instead of mislabelling Canvas', async () => {
@@ -173,5 +195,21 @@ async function test(name, run) { await run(); console.log(`PASS: ${name}`); }
     assert.equal(await next, true);
     assert.equal(h.calls.filter(call => call[0] === 'capture').length, 2);
     h.api.restore = restore; await h.runner.stop();
+  });
+
+  await test('completion waits for asynchronous restoration and restoration failures never report success', async () => {
+    const h = harness(); await h.runner.start({ scenario: 'start', seconds: 5 });
+    let restore;
+    h.api.restore = () => new Promise(resolve => { restore = resolve; });
+    h.recorder.warmLeft = 0; h.frame(5);
+    assert.equal(h.emitted.some(event => event.type === 'benchmark-complete'), false);
+    restore(); await h.runner.stop();
+    assert.equal(h.emitted.filter(event => event.type === 'benchmark-complete').length, 1);
+
+    const failed = harness(); await failed.runner.start({ scenario: 'start' });
+    failed.api.restore = async () => { throw new Error('restore fixture failed'); };
+    await assert.rejects(failed.runner.stop('complete'), /restore fixture failed/);
+    assert.equal(failed.emitted.some(event => event.type === 'benchmark-complete'), false);
+    assert.ok(failed.emitted.some(event => event.type === 'benchmark-error' && event.message.includes('Restore failed')));
   });
 })().catch(error => { console.error(error); process.exitCode = 1; });

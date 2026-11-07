@@ -80,7 +80,8 @@ test('automatic quality degrades gradually and recovers with hysteresis', () => 
   const down = h.changes[0]; assert.ok(down.time >= 6000, 'warmup and sustained overload precede downgrade');
   const before = h.changes.length;
   h.feed(1000 / 60, 8); assert.equal(h.changes.length, before, 'brief recovery must not switch quality');
-  h.feed(1000 / 60, 60); assert.equal(h.quality.resolved, 'high');
+  h.feed(1000 / 60, 60); assert.equal(h.quality.resolved, 'balanced');
+  h.feed(1000 / 60, 600); assert.equal(h.quality.resolved, 'balanced', 'stable vsync is not proof of GPU headroom');
   for (let i = 1; i < h.changes.length; i++) {
     const minimum = h.changes[i].profile === 'eco' ? 8000 : 20000;
     assert.ok(h.changes[i].time - h.changes[i - 1].time >= minimum, 'quality changes respect cooldown');

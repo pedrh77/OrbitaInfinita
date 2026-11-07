@@ -1,0 +1,83 @@
+{
+  "method": "JS weighted by reported sampleMs; native actual-presentation timestamps column 2, consecutive pairs within each snapshot, duplicate pairs removed, zero/pending timestamps excluded, intervals >=1s excluded. Native snapshots sample windows, not the entire session. Percentile uses floor((n-1)*p). No pooling of window percentiles.",
+  "results": [
+    {
+      "renderer": "canvas",
+      "status": "complete",
+      "reports": 120,
+      "screenChecks": 105,
+      "screenAllValid": true,
+      "apkMatches": true,
+      "pixels": [
+        1200276
+      ],
+      "jsFPSWeighted": 14.510331492724013,
+      "jsWindowP95Median": 83.32,
+      "jsWindowP95Range": [
+        33.33,
+        99.98
+      ],
+      "jsWindowP99Max": 199.96,
+      "nativeSamples": 8894,
+      "nativeSampleP50": 66.655208,
+      "nativeSampleP95": 83.342188,
+      "nativeSampleP99": 99.983854,
+      "nativeSampleFPS": 14.9927237575441,
+      "nativeGlobalFPS": [
+        "15.265"
+      ],
+      "errors": "--------- beginning of system\n--------- beginning of main\n",
+      "memoryPSS": {
+        "memoryBefore": [
+          "112390"
+        ],
+        "memoryAfter": [
+          "250410"
+        ]
+      },
+      "jsHeapUsedRange": [
+        19300000,
+        19300000
+      ]
+    },
+    {
+      "renderer": "pixi",
+      "status": "complete",
+      "reports": 119,
+      "screenChecks": 102,
+      "screenAllValid": true,
+      "apkMatches": true,
+      "pixels": [
+        1200276
+      ],
+      "jsFPSWeighted": 59.41742397687857,
+      "jsWindowP95Median": 16.66,
+      "jsWindowP95Range": [
+        16.66,
+        33.33
+      ],
+      "jsWindowP99Max": 166.63,
+      "nativeSamples": 14931,
+      "nativeSampleP50": 16.663542,
+      "nativeSampleP95": 16.691666,
+      "nativeSampleP99": 16.727604,
+      "nativeSampleFPS": 59.82740919395427,
+      "nativeGlobalFPS": [
+        "62.074"
+      ],
+      "errors": "--------- beginning of system\n--------- beginning of main\n",
+      "memoryPSS": {
+        "memoryBefore": [
+          "98324"
+        ],
+        "memoryAfter": [
+          "273037"
+        ]
+      },
+      "jsHeapUsedRange": [
+        29400000,
+        29400000
+      ]
+    }
+  ]
+}

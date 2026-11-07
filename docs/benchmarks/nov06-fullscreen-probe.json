@@ -1,0 +1,205 @@
+{
+  "configuration": {
+    "renderer": "pixi",
+    "scenario": "flight",
+    "quality": "balanced",
+    "seconds": 10,
+    "label": "nov06-fullscreen-probe",
+    "background": false,
+    "screenshots": true,
+    "apk": "app\\build\\outputs\\apk\\debug\\app-debug.apk"
+  },
+  "status": "complete",
+  "records": [
+    {
+      "type": "benchmark-start",
+      "scenario": "flight",
+      "renderer": "pixi",
+      "quality": "balanced",
+      "seconds": 10,
+      "seed": 12345,
+      "startedAt": 1251.8999999910593,
+      "tag": "OrbitaBench"
+    },
+    {
+      "type": "benchmark-scene",
+      "running": true,
+      "scenario": "flight",
+      "renderer": "pixi",
+      "quality": "balanced",
+      "seed": 12345,
+      "index": 1,
+      "count": 1,
+      "tag": "OrbitaBench"
+    },
+    {
+      "scenario": "flight",
+      "renderer": "pixi",
+      "profile": "balanced",
+      "warmupMs": 3000,
+      "windowMs": 5000,
+      "durationMs": 10000,
+      "state": "playing",
+      "frames": 248,
+      "rafFrames": 248,
+      "sampleMs": 5006.63,
+      "fps": 49.53,
+      "minFPS": 4.29,
+      "frameP50": 16.67,
+      "frameP95": 33.33,
+      "frameP99": 99.98,
+      "maxFrameMs": 233.29,
+      "over33ms": 8,
+      "updateMean": 0.29,
+      "updateP95": 0.4,
+      "predictionMean": 1.29,
+      "predictionP95": 4.2,
+      "predictionSolves": 68,
+      "renderPrepMean": 8.55,
+      "renderPrepP95": 13.6,
+      "stateChanges": 0,
+      "jsHeap": {
+        "used": 24500000,
+        "total": 42100000,
+        "limit": 1136000000
+      },
+      "jsGCCount": null,
+      "counters": {
+        "backgrounds": 0,
+        "bodies": 11,
+        "pixels": 1200276,
+        "renderer": "pixi",
+        "quality": "balanced"
+      },
+      "tag": "OrbitaPerf"
+    },
+    {
+      "scenario": "flight",
+      "renderer": "pixi",
+      "profile": "balanced",
+      "warmupMs": 3000,
+      "windowMs": 5000,
+      "durationMs": 10000,
+      "state": "playing",
+      "frames": 300,
+      "rafFrames": 300,
+      "sampleMs": 5006.06,
+      "fps": 59.93,
+      "minFPS": 42.27,
+      "frameP50": 16.67,
+      "frameP95": 16.67,
+      "frameP99": 16.67,
+      "maxFrameMs": 23.66,
+      "over33ms": 0,
+      "updateMean": 0.2,
+      "updateP95": 0.3,
+      "predictionMean": 0.36,
+      "predictionP95": 0.9,
+      "predictionSolves": 75,
+      "renderPrepMean": 7.06,
+      "renderPrepP95": 8.5,
+      "stateChanges": 0,
+      "jsHeap": {
+        "used": 24500000,
+        "total": 42100000,
+        "limit": 1136000000
+      },
+      "jsGCCount": null,
+      "counters": {
+        "backgrounds": 0,
+        "bodies": 0,
+        "pixels": 1200276,
+        "renderer": "pixi",
+        "quality": "balanced"
+      },
+      "tag": "OrbitaPerf"
+    },
+    {
+      "type": "benchmark-complete",
+      "reason": "complete",
+      "scenario": "flight",
+      "renderer": "pixi",
+      "quality": "balanced",
+      "seconds": 10,
+      "seed": 12345,
+      "reports": 2,
+      "tag": "OrbitaBench"
+    }
+  ],
+  "logcat": "--------- beginning of main\n--------- beginning of system\n11-06 15:09:25.312 18397 18397 I OrbitaBench: {\"type\":\"benchmark-start\",\"scenario\":\"flight\",\"renderer\":\"pixi\",\"quality\":\"balanced\",\"seconds\":10,\"seed\":12345,\"startedAt\":1251.8999999910593}\n11-06 15:09:25.328 18397 18397 I OrbitaBench: {\"type\":\"benchmark-scene\",\"running\":true,\"scenario\":\"flight\",\"renderer\":\"pixi\",\"quality\":\"balanced\",\"seed\":12345,\"index\":1,\"count\":1}\n11-06 15:09:33.276 18397 18397 I OrbitaPerf: {\"scenario\":\"flight\",\"renderer\":\"pixi\",\"profile\":\"balanced\",\"warmupMs\":3000,\"windowMs\":5000,\"durationMs\":10000,\"state\":\"playing\",\"frames\":248,\"rafFrames\":248,\"sampleMs\":5006.63,\"fps\":49.53,\"minFPS\":4.29,\"frameP50\":16.67,\"frameP95\":33.33,\"frameP99\":99.98,\"maxFrameMs\":233.29,\"over33ms\":8,\"updateMean\":0.29,\"updateP95\":0.4,\"predictionMean\":1.29,\"predictionP95\":4.2,\"predictionSolves\":68,\"renderPrepMean\":8.55,\"renderPrepP95\":13.6,\"stateChanges\":0,\"jsHeap\":{\"used\":24500000,\"total\":42100000,\"limit\":1136000000},\"jsGCCount\":null,\"counters\":{\"backgrounds\":0,\"bodies\":11,\"pixels\":1200276,\"renderer\":\"pixi\",\"quality\":\"balanced\"}}\n11-06 15:09:38.280 18397 18397 I OrbitaPerf: {\"scenario\":\"flight\",\"renderer\":\"pixi\",\"profile\":\"balanced\",\"warmupMs\":3000,\"windowMs\":5000,\"durationMs\":10000,\"state\":\"playing\",\"frames\":300,\"rafFrames\":300,\"sampleMs\":5006.06,\"fps\":59.93,\"minFPS\":42.27,\"frameP50\":16.67,\"frameP95\":16.67,\"frameP99\":16.67,\"maxFrameMs\":23.66,\"over33ms\":0,\"updateMean\":0.2,\"updateP95\":0.3,\"predictionMean\":0.36,\"predictionP95\":0.9,\"predictionSolves\":75,\"renderPrepMean\":7.06,\"renderPrepP95\":8.5,\"stateChanges\":0,\"jsHeap\":{\"used\":24500000,\"total\":42100000,\"limit\":1136000000},\"jsGCCount\":null,\"counters\":{\"backgrounds\":0,\"bodies\":0,\"pixels\":1200276,\"renderer\":\"pixi\",\"quality\":\"balanced\"}}\n11-06 15:09:38.322 18397 18397 I OrbitaBench: {\"type\":\"benchmark-complete\",\"reason\":\"complete\",\"scenario\":\"flight\",\"renderer\":\"pixi\",\"quality\":\"balanced\",\"seconds\":10,\"seed\":12345,\"reports\":2}\n",
+  "device": {
+    "model": {
+      "stdout": "AGS6-W09",
+      "error": null
+    },
+    "manufacturer": {
+      "stdout": "HUAWEI",
+      "error": null
+    },
+    "androidSDK": {
+      "stdout": "29",
+      "error": null
+    },
+    "androidRelease": {
+      "stdout": "10",
+      "error": null
+    },
+    "webView": {
+      "stdout": "Current WebView Update Service state\n  Fallback logic enabled: false\n  Multiprocess enabled: true\n  Current WebView package (name, version): (com.huawei.webview, 114.0.5.302)\n  Minimum targetSdkVersion: 29\n  Minimum WebView version code: -1\n  Number of relros started: 2\n  Number of relros finished: 2\n  WebView package dirty: false\n  Any WebView package installed: true\n  Preferred WebView package (name, version): (com.huawei.webview, 114.0.5.302)\n  WebView packages:\n    Valid package com.huawei.webview (versionName: 114.0.5.302, versionCode: 21705, targetSdkVersion: 33) is  installed/enabled for all users\n    com.android.chrome is NOT installed.\n    com.gbox.com.android.chrome is NOT installed.\n    com.google.android.webview is NOT installed.\n    com.android.webview is NOT installed.",
+      "error": null
+    },
+    "batteryBefore": {
+      "stdout": "Current Battery Service state:\n  AC powered: false\n  USB powered: true\n  Wireless powered: false\n  Max charging current: 0\n  Max charging voltage: 0\n  Charge counter: 1462000\n  status: 2\n  health: 2\n  present: true\n  level: 23\n  scale: 100\n  voltage: 3715\n  temperature: 360\n  technology: Li-poly",
+      "error": null
+    },
+    "lowPowerBefore": {
+      "stdout": "0",
+      "error": null
+    },
+    "installedAPKs": [
+      {
+        "path": "/data/app/com.orbita.infinita.debug-vXIgzruNTzhnnrZBOox6gg==/base.apk",
+        "sha256": "a055ff2ebd6e30a7d0fcb639914a3e0e81d2a9deb28ae6f0d345bf63e1447787",
+        "probe": {
+          "stdout": "a055ff2ebd6e30a7d0fcb639914a3e0e81d2a9deb28ae6f0d345bf63e1447787  /data/app/com.orbita.infinita.debug-vXIgzruNTzhnnrZBOox6gg==/base.apk",
+          "error": null
+        }
+      }
+    ],
+    "packagePathProbe": {
+      "stdout": "package:/data/app/com.orbita.infinita.debug-vXIgzruNTzhnnrZBOox6gg==/base.apk",
+      "error": null
+    },
+    "localAPK": {
+      "path": "C:\\Projetos\\OrbitaInfinita\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
+      "sha256": "a055ff2ebd6e30a7d0fcb639914a3e0e81d2a9deb28ae6f0d345bf63e1447787",
+      "matchesInstalledBase": true
+    },
+    "measurementScope": {
+      "memoryAndGfxinfo": "debug application process; WebView renderer may run separately",
+      "renderPrep": "JavaScript command preparation; not GPU execution time",
+      "touchLatency": "not measured by this runner",
+      "gpuTime": "not measured by this runner"
+    },
+    "screenCaptureMode": "during-measurement",
+    "surfaceLatencyAfter": {
+      "stdout": "16666666\n87160254239303\t87160269129928\t87160256458574\n87160287960658\t87160302475762\t87160290135137\n87160323301803\t87160335803887\t87160325085137\n87160355224720\t87160369141387\t87160357431491\n87160387290345\t87160402459616\t87160389530449\n87160420821074\t87160435787220\t87160422778366\n87160453808053\t87160469090345\t87160455934095\n87160486266387\t87160502422637\t87160488528366\n87160519021074\t87160535767428\t87160521428887\n87160554388262\t87160569090866\t87160556738262\n87160588390866\t87160602431491\t87160590674199\n87160620603887\t87160635721595\t87160622884616\n87160652520553\t87160669052845\t87160654674720\n87160686545033\t87160719095553\t87160688533053\n87160722275762\t87160735732533\t87160724212220\n87160754920033\t87160769066908\t87160757313783\n87160787656491\t87160802386178\t87160789976283\n87160820142949\t87160852366387\t87160822512220\n87160852865345\t87160869015866\t87160855078887\n87160886276283\t87160902341387\t87160888382533\n87160919478366\t87160935696074\t87160921728366\n87160954091387\t87160969018991\t87160956429928\n87160985654408\t87161002349199\t87160987960137\n87161018838783\t87161035684616\t87161021163783\n87161054891908\t87161068979928\t87161057109095\n87161087374199\t87161102307533\t87161089423678\n87161120253366\t87161135637220\t87161122411699\n87161154353366\t87161168964303\t87161156786699\n87161190312741\t87161202311699\t87161192264303\n87161221883053\t87161235639303\t87161224072637\n87161255030449\t87161268964824\t87161257088782\n87161286218470\t87161302291907\t87161288300241\n87161319270553\t87161335620032\t87161321594512\n87161353390345\t87161368955449\t87161355384095\n87161385632012\t87161402274199\t87161387950762\n87161419623678\t87161452269512\t87161421952324\n87161454505449\t87161468923678\t87161456880449\n87161486872637\t87161502227845\t87161489121074\n87161520119512\t87161535551282\t87161522138262\n87161552299720\t87161568878887\t87161554096595\n87161585409095\t87161602213262\t87161587525762\n87161619459616\t87161635541387\t87161621619512\n87161652922116\t87161668866907\t87161654842428\n87161685986178\t87161702197116\t87161688224720\n87161720062741\t87161735546595\t87161722118470\n87161753197637\t87161768872116\t87161755493991\n87161786797637\t87161802196595\t87161789150241\n87161819480970\t87161835497637\t87161821835137\n87161852845553\t87161868826803\t87161854743470\n87161886593991\t87161902160137\t87161888750762\n87161919753366\t87161935477845\t87161921978366\n87161952470032\t87161968807532\t87161954434095\n87161987446595\t87162018848157\t87161989593991\n87162022516907\t87162035497637\t87162024680449\n87162054203366\t87162068791387\t87162056187741\n87162086125241\t87162102122116\t87162088225241\n87162119999199\t87162135451282\t87162122154407\n87162152861699\t87162168775762\t87162154954407\n87162186525762\t87162202102845\t87162188652324\n87162219194512\t87162235429928\t87162221306491\n87162253398157\t87162268753366\t87162255518991\n87162287523157\t87162302092949\t87162289630449\n87162320158053\t87162335409616\t87162322208574\n87162352654407\t87162368738261\t87162354748157\n87162388764303\t87162402096595\t87162390559095\n87162422161178\t87162435409095\t87162423952324\n87162453145032\t87162468738782\t87162455499720\n87162485422116\t87162502065345\t87162487747116\n87162521609616\t87162535387741\t87162523699199\n87162554879928\t87162568689824\t87162556977324\n87162585289303\t87162602018991\t87162587512220\n87162618818991\t87162635351803\t87162621040866\n87162653976803\t87162668680449\t87162655740345\n87162687117949\t87162702004407\t87162689230449\n87162719358053\t87162735334095\t87162721451282\n87162752512220\t87162768660657\t87162754571595\n87162787966386\t87162802006491\t87162790108574\n87162818991386\t87162835335136\t87162821302324\n87162853323157\t87162868665345\t87162855328886\n87162886382011\t87162901963261\t87162888394511\n87162919365866\t87162935293991\t87162921644511\n87162952659095\t87162968625241\t87162954764824\n87162985966386\t87163001945032\t87162988086178\n87163018701282\t87163035269511\t87163020788261\n87163052560657\t87163068593470\t87163054676282\n87163085928366\t87163101962220\t87163087966907\n87163119883574\t87163135257011\t87163121990866\n87163153460657\t87163168597636\t87163155596595\n87163186376282\t87163201912220\t87163188466386\n87163220234095\t87163235270553\t87163222152324\n87163254711699\t87163268588782\t87163256605970\n87163285290345\t87163301913261\t87163287567428\n87163320363261\t87163335241907\t87163320464303\n87163351535136\t87163368548157\t87163353949199\n87163385795553\t87163401870553\t87163388087741\n87163418424720\t87163435200240\t87163420970032\n87163452095032\t87163468528886\t87163454061699\n87163486466907\t87163501850240\t87163488525761\n87163518559095\t87163535179928\t87163520635657\n87163552325240\t87163568514303\t87163554282532\n87163586158574\t87163601833574\t87163588237220\n87163619593470\t87163635164824\t87163624741386\n87163655774199\t87163668493470\t87163657936178\n87163713238261\t87163735150240\t87163716745553\n87163764474199\t87163785141386\t87163773424720\n87163790766907\t87163818480970\t87163800630970\n87163805067428\t87163835148678\t87163815693990\n87163820935136\t87163851849199\t87163831960657\n87163837305970\t87163868513782\t87163847192428\n87163853187740\t87163885186699\t87163859553365\n87163871476282\t87163901836699\t87163878792428\n87163884347115\t87163918529928\t87163894824720\n87163899415865\t87163935170032\t87163910578886\n87163915502845\t87163951861699\t87163926951803\n87163931113782\t87163968499199\t87163941371074\n87163948124199\t87163985155970\t87163959308574\n87163963516907\t87164001816386\t87163974151803\n87163980541386\t87164018488261\t87163990657011\n87163999409095\t87164035151282\t87164005865865\n87164015439824\t87164051814824\t87164024425240\n87164030391907\t87164068512220\t87164040426803\n87164048212740\t87164085150761\t87164060491907\n87164065416907\t87164101768990\t87164071334095\n87164089066907\t87164118464824\t87164097512220\n87164104317949\t87164135135136\t87164114972115\n87164119519511\t87164151790865\t87164129269511\n87164134728365\t9223372036854775807\t87164143952324",
+      "error": null
+    },
+    "surfaceLatencyScope": "last available app-window presentation timestamps, potentially including restored menu; columns are desired/actual/ready nanoseconds, not per-scene GPU time",
+    "batteryAfter": {
+      "stdout": "Current Battery Service state:\n  AC powered: false\n  USB powered: true\n  Wireless powered: false\n  Max charging current: 0\n  Max charging voltage: 0\n  Charge counter: 1464000\n  status: 2\n  health: 2\n  present: true\n  level: 23\n  scale: 100\n  voltage: 3704\n  temperature: 360\n  technology: Li-poly",
+      "error": null
+    },
+    "lowPowerAfter": {
+      "stdout": "0",
+      "error": null
+    }
+  },
+  "launch": "Starting: Intent { cmp=com.orbita.infinita.debug/com.orbita.infinita.MainActivity (has extras) }\nStatus: ok\nLaunchState: COLD\nActivity: com.huawei.android.launcher/.unihome.UniHomeLauncher\nTotalTime: 43\nWaitTime: 47\nComplete\n",
+  "memoryBefore": "Applications Memory Usage (in Kilobytes):\nUptime: 87148081 Realtime: 348932432\n\n** MEMINFO in pid 18397 [com.orbita.infinita.debug] **\n                   Pss  Private  Private  SwapPss     Heap     Heap     Heap\n                 Total    Dirty    Clean    Dirty     Size    Alloc     Free\n                ------   ------   ------   ------   ------   ------   ------\n  Native Heap     1478     1324        0       75    12288     6387     5900\n  Dalvik Heap      664      428        0       14     3059     1011     2048\n Dalvik Other      432      288        0        0                           \n        Stack       32       32        0        2                           \n    Other dev       16        0       16        0                           \n     .so mmap      170       40        0        2                           \n    .jar mmap      332        0       44        0                           \n    .apk mmap      192        0        0        0                           \n    .dex mmap     4512     4512        0        0                           \n    .oat mmap        9        0        0        0                           \n    .art mmap     7500     7276        0        8                           \n   Other mmap       52       48        0        0                           \n      Unknown      421      376        0       28                           \n        TOTAL    15939    14324       60      129    15347     7398     7948\n \n App Summary\n                       Pss(KB)\n                        ------\n           Java Heap:     7704\n         Native Heap:     1324\n                Code:     4596\n               Stack:       32\n            Graphics:        0\n       Private Other:      728\n              System:     1555\n \n               TOTAL:    15939       TOTAL SWAP PSS:      129\n \n Objects\n               Views:        0         ViewRootImpl:        0\n         AppContexts:        1           Activities:        0\n              Assets:        4        AssetManagers:        0\n       Local Binders:        2        Proxy Binders:       24\n       Parcel memory:        2         Parcel count:       11\n    Death Recipients:        0      OpenSSL Sockets:        0\n            WebViews:        0\n \n SQL\n         MEMORY_USED:        0\n  PAGECACHE_OVERFLOW:        0          MALLOC_SIZE:        0\n \n",
+  "memoryAfter": "Applications Memory Usage (in Kilobytes):\nUptime: 87164365 Realtime: 348948717\n\n** MEMINFO in pid 18397 [com.orbita.infinita.debug] **\n                   Pss  Private  Private  SwapPss     Heap     Heap     Heap\n                 Total    Dirty    Clean    Dirty     Size    Alloc     Free\n                ------   ------   ------   ------   ------   ------   ------\n  Native Heap    45032    44968        0        2    59392    50128     9263\n  Dalvik Heap    14698    14652        0        0    11358     5214     6144\n Dalvik Other     5099     5096        0        0                           \n        Stack       52       52        0        0                           \n       Ashmem     1612      196        0        0                           \n    Other dev      164        0      164        0                           \n     .so mmap     1311      120        4        0                           \n    .jar mmap     1578        0      448        0                           \n    .apk mmap    12306      396     9432        0                           \n    .ttf mmap        0        0        0        0                           \n    .dex mmap    18860    17440      568        0                           \n    .oat mmap       23        0        0        0                           \n    .art mmap     8278     8020       56        0                           \n   Other mmap     1243      220      572        0                           \n    GL mtrack   144888   144888        0        0                           \n      Unknown    16149    16124        0        2                           \n        TOTAL   271297   252172    11244        4    70750    55342    15407\n \n App Summary\n                       Pss(KB)\n                        ------\n           Java Heap:    22728\n         Native Heap:    44968\n                Code:    28408\n               Stack:       52\n            Graphics:   144888\n       Private Other:    22372\n              System:     7881\n \n               TOTAL:   271297       TOTAL SWAP PSS:        4\n \n Objects\n               Views:       17         ViewRootImpl:        1\n         AppContexts:        5           Activities:        1\n              Assets:        6        AssetManagers:        0\n       Local Binders:       70        Proxy Binders:       50\n       Parcel memory:       28         Parcel count:      114\n    Death Recipients:        5      OpenSSL Sockets:        3\n            WebViews:        6\n \n SQL\n         MEMORY_USED:      398\n  PAGECACHE_OVERFLOW:       70          MALLOC_SIZE:      117\n \n DATABASES\n      pgsz     dbsz   Lookaside(b)          cache  Dbname\n         4       96             98         4/29/6  /data/user/0/com.orbita.infinita.debug/no_backup/androidx.work.workdb\n         4        8                         0/0/0    (attached) temp\n         4       96             33         2/14/3  /data/user/0/com.orbita.infinita.debug/no_backup/androidx.work.workdb (2)\n",
+  "gfxinfo": "Applications Graphics Acceleration Info:\nUptime: 87164669 Realtime: 348949020\n\n** Graphics info for pid 18397 [com.orbita.infinita.debug] **\n\nStats since: 87148972683576ns\nTotal frames rendered: 399\nJanky frames: 48 (12.03%)\n50th percentile: 9ms\n90th percentile: 17ms\n95th percentile: 24ms\n99th percentile: 150ms\nNumber Missed Vsync: 7\nNumber High input latency: 58\nNumber Slow UI thread: 11\nNumber Slow bitmap uploads: 0\nNumber Slow issue draw commands: 10\nNumber Frame deadline missed: 21\nHISTOGRAM: 5ms=0 6ms=4 7ms=9 8ms=88 9ms=108 10ms=69 11ms=44 12ms=12 13ms=6 14ms=2 15ms=6 16ms=7 17ms=5 18ms=8 19ms=2 20ms=3 21ms=5 22ms=0 23ms=1 24ms=1 25ms=2 26ms=1 27ms=0 28ms=0 29ms=0 30ms=0 31ms=1 32ms=2 34ms=1 36ms=1 38ms=0 40ms=1 42ms=0 44ms=0 46ms=0 48ms=0 53ms=1 57ms=1 61ms=0 65ms=0 69ms=0 73ms=1 77ms=0 81ms=0 85ms=0 89ms=0 93ms=0 97ms=0 101ms=0 105ms=0 109ms=0 113ms=0 117ms=1 121ms=0 125ms=1 129ms=0 133ms=0 150ms=2 200ms=1 250ms=1 300ms=0 350ms=0 400ms=0 450ms=0 500ms=0 550ms=0 600ms=1 650ms=0 700ms=0 750ms=0 800ms=0 850ms=0 900ms=0 950ms=0 1000ms=0 1050ms=0 1100ms=0 1150ms=0 1200ms=0 1250ms=0 1300ms=0 1350ms=0 1400ms=0 1450ms=0 1500ms=0 1550ms=0 1600ms=0 1650ms=0 1700ms=0 1750ms=0 1800ms=0 1850ms=0 1900ms=0 1950ms=0 2000ms=0 2050ms=0 2100ms=0 2150ms=0 2200ms=0 2250ms=0 2300ms=0 2350ms=0 2400ms=0 2450ms=0 2500ms=0 2550ms=0 2600ms=0 2650ms=0 2700ms=0 2750ms=0 2800ms=0 2850ms=0 2900ms=0 2950ms=0 3000ms=0 3050ms=0 3100ms=0 3150ms=0 3200ms=0 3250ms=0 3300ms=0 3350ms=0 3400ms=0 3450ms=0 3500ms=0 3550ms=0 3600ms=0 3650ms=0 3700ms=0 3750ms=0 3800ms=0 3850ms=0 3900ms=0 3950ms=0 4000ms=0 4050ms=0 4100ms=0 4150ms=0 4200ms=0 4250ms=0 4300ms=0 4350ms=0 4400ms=0 4450ms=0 4500ms=0 4550ms=0 4600ms=0 4650ms=0 4700ms=0 4750ms=0 4800ms=0 4850ms=0 4900ms=0 4950ms=0\nFont Cache (CPU):\n  Size: 0.00 kB \n  Glyph Count: 0 \nCPU Caches:\nGPU Caches:\n  Other:\n    Other: 0.00 bytes (1 entry)\nOther Caches:\n                         Current / Maximum\n  VectorDrawableAtlas    0.00 kB /   0.00 KB (entries = 0)\n  Layers Total           0.00 KB (numLayers = 0)\nTotal GPU memory usage:\n  0 bytes, 0.00 bytes (0.00 bytes is purgeable)\n\n\nPipeline=Skia (OpenGL)\n\nLayout Cache Info:\n  Usage: 0/5000 entries\n  Hit ratio: 0/1 (0.000000)\nProfile data in ms:\n\n\tcom.orbita.infinita.debug/com.orbita.infinita.MainActivity/android.view.ViewRootImpl@f60db25 (visibility=0)\nView hierarchy:\n\n  com.orbita.infinita.debug/com.orbita.infinita.MainActivity/android.view.ViewRootImpl@f60db25\n  5 views, 7,78 kB of display lists\n\n\nTotal ViewRootImpl: 1\nTotal Views:        5\nTotal DisplayList:  7,78 kB\n\n",
+  "runtimeErrors": "--------- beginning of main\n--------- beginning of system\n",
+  "durationWallSeconds": 17.7
+}

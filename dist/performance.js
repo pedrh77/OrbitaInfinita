@@ -42,7 +42,9 @@
       this.good = this.average < 17.8 && this.targetFPS === 60 ? this.good + ms : 0;
       const index = ORDER.indexOf(this.resolved);
       const down = this.bad >= 3000 && now - this.lastChange >= 8000 && index > 0;
-      const up = this.good >= 15000 && now - this.lastChange >= 20000 && now >= this.nextUpgradeAfter && index < ORDER.length - 1;
+      // Vsync-limited 60 FPS cannot prove GPU headroom for almost twice the pixels.
+      // Recover automatic quality up to Balanced; High remains an explicit choice.
+      const up = this.good >= 15000 && now - this.lastChange >= 20000 && now >= this.nextUpgradeAfter && index < ORDER.indexOf('balanced');
       if (!down && !up) return;
       this.resolved = ORDER[index + (down ? -1 : 1)]; this.lastChange = now;
       if (down) this.nextUpgradeAfter = now + 60000;
